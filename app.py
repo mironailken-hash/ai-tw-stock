@@ -486,6 +486,14 @@ div[data-testid="stForm"] button p{
  font-size:12px;line-height:1.55;
 }
 
+
+.v8-data-card{background:linear-gradient(145deg,#071522,#0a1d2d);border:1px solid rgba(221,183,68,.42);
+border-radius:16px;padding:16px 18px;margin:8px 0 13px}
+.v8-data-title{font-size:21px;font-weight:900;color:#F2D56B;margin:6px 0}
+.v8-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.v8-grid>div{background:#06111c;border:1px solid #1e3a52;border-radius:10px;padding:9px;color:#dce7ef;font-size:12px}
+@media(max-width:700px){.v8-grid{grid-template-columns:1fr 1fr}}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -785,6 +793,98 @@ def calibrated_probability_proxy(base_score, event_score=0, completeness=1.0):
     p=.5 + (p-.5)*max(.25,min(1.0,completeness))
     return round(p*100,1)
 
+
+def _safe_read_html(url, timeout=10):
+    try:
+        h=requests.get(url,timeout=timeout,headers={"User-Agent":"Mozilla/5.0"}).text
+        return pd.read_html(h)
+    except Exception:
+        return []
+
+def taifex_pc_ratio():
+    """期交所臺指選擇權 Put/Call ratio，官方公開頁面。"""
+    try:
+        tabs=_safe_read_html("https://www.taifex.com.tw/cht/3/pcRatio")
+        for df in tabs:
+            cols=" ".join(map(str,df.columns))
+            if "買賣權成交量比率" in cols and len(df):
+                r=df.iloc[0]
+                vals=[x for x in r.tolist()]
+                return {"date":str(vals[0]),"vol_pc":float(str(vals[3]).replace(",","")),
+                        "oi_pc":float(str(vals[6]).replace(",",""))}
+    except Exception:
+        pass
+    return None
+
+def taifex_foreign_tx():
+    """期交所臺股期貨三大法人；抓外資未平倉多空淨額。"""
+    try:
+        tabs=_safe_read_html("https://www.taifex.com.tw/cht/3/futContractsDateExcel")
+        for df in tabs:
+            flat=" ".join(map(str,df.astype(str).values.flatten()[:500]))
+            if "臺股期貨" in flat and "外資" in flat:
+                # HTML欄位會因網站調整而變；採保守解析，失敗就回傳 None，不猜值。
+                for _,r in df.iterrows():
+                    txt=" ".join(map(str,r.tolist()))
+                    if "臺股期貨" in txt and "外資" in txt:
+                        nums=[]
+                        for v in r.tolist():
+                            z=str(v).replace(",","").strip()
+                            try: nums.append(float(z))
+                            except: pass
+                        if nums:
+                            return {"raw":txt,"net_oi":nums[-1]}
+    except Exception:
+        pass
+    return None
+
+def margin_finmind(sid, token=""):
+    """FinMind 融資融券；資料源不可用時回 None。"""
+    try:
+        start=(datetime.now()-timedelta(days=45)).strftime("%Y-%m-%d")
+        p={"dataset":"TaiwanStockMarginPurchaseShortSale","data_id":sid,"start_date":start}
+        if token: p["token"]=token
+        j=requests.get("https://api.finmindtrade.com/api/v4/data",params=p,timeout=10).json()
+        d=pd.DataFrame(j.get("data",[]))
+        if d.empty: return None
+        r=d.iloc[-1]
+        def pick(keys):
+            for k in keys:
+                if k in r.index and pd.notna(r[k]):
+                    try:return float(r[k])
+                    except:return r[k]
+            return None
+        return {
+            "date":str(r.get("date","")),
+            "margin_balance":pick(["MarginPurchaseTodayBalance","MarginPurchaseBalance"]),
+            "short_balance":pick(["ShortSaleTodayBalance","ShortSaleBalance"])
+        }
+    except Exception:
+        return None
+
+def lending_finmind(sid, token=""):
+    """FinMind 借券相關；資料源不可用時回 None。"""
+    for dataset in ["TaiwanStockSecuritiesLending","TaiwanStockSecuritiesLendingShortSale"]:
+        try:
+            start=(datetime.now()-timedelta(days=45)).strftime("%Y-%m-%d")
+            p={"dataset":dataset,"data_id":sid,"start_date":start}
+            if token:p["token"]=token
+            j=requests.get("https://api.finmindtrade.com/api/v4/data",params=p,timeout=10).json()
+            d=pd.DataFrame(j.get("data",[]))
+            if not d.empty:
+                return {"date":str(d.iloc[-1].get("date","")),"dataset":dataset,"row":d.iloc[-1].to_dict()}
+        except Exception:
+            pass
+    return None
+
+def probability_gate(data_flags):
+    """資料不足時禁止顯示買賣機率。"""
+    required=["價格","歷史行情","技術面","法人"]
+    missing=[k for k in required if not data_flags.get(k,False)]
+    completeness=sum(bool(v) for v in data_flags.values())/max(1,len(data_flags))
+    ok=(not missing) and completeness>=0.55
+    return ok, completeness, missing
+
 def broker_research(sid, name, n=8):
     """只搜尋公開券商/投顧研究索引，不把一般新聞雜訊混入模型。"""
     domains=[
@@ -854,7 +954,7 @@ st.markdown(f"""
   <div style="max-width:680px">
     <div class="kicker">TAIWAN EQUITY INTELLIGENCE TERMINAL</div>
     <div class="hero-title"><span class="gold">KEN AI 百億</span>台股智慧決策系統</div>
-    <div class="hero-sub" style="font-size:16px;margin-top:10px">市場訊號 × 法人偏多機率 × 趨勢結構 × 風險驗證</div>
+    <div class="hero-sub" style="font-size:16px;margin-top:10px">市場訊號 × 法人籌碼因素 × 趨勢結構 × 風險驗證</div>
     <div style="margin-top:18px;color:#e8d18b;font-weight:800">用條件確認趨勢，不用情緒猜行情</div>
   </div>
 </div>
@@ -933,6 +1033,11 @@ sid,name=resolve_stock(q)
 # V7：搜尋個股 + 台灣 + 國際重大事件新聞
 _v7_news = global_event_news(sid, name)
 _v7_event = event_impact_for_stock(_v7_news, sid, name)
+_v8_pc = taifex_pc_ratio()
+_v8_tx = taifex_foreign_tx()
+_v8_margin = margin_finmind(sid, TOKEN)
+_v8_lending = lending_finmind(sid, TOKEN)
+
 if not sid:
     st.error("找不到股票名稱。請改輸入股票代號，例如 6213。")
     st.stop()
@@ -979,6 +1084,19 @@ long=score_trend(d,90)
 
 inst=fm("TaiwanStockInstitutionalInvestorsBuySell",sid,today-timedelta(days=35),today,token)
 inst_score,inst_net=institutional_score(inst)
+_v8_flags={
+    "價格": pd.notna(close),
+    "歷史行情": price is not None and len(price)>=20,
+    "技術面": True,
+    "法人": inst is not None and len(inst)>0,
+    "融資融券": _v8_margin is not None,
+    "借券": _v8_lending is not None,
+    "臺指選擇權": _v8_pc is not None,
+    "臺指期外資": _v8_tx is not None,
+    "全球事件": len(_v7_news)>0,
+}
+_v8_prob_ok,_v8_complete,_v8_missing=probability_gate(_v8_flags)
+
 
 status,status_reason,breakout,pull_lo,pull_hi,weak,confirmations=attack_status(
     short,close,support,resistance,vol_ratio,inst_score
@@ -1008,7 +1126,7 @@ _v7_components = {
     "全球事件新聞": bool(len(_v7_news)>0),
     "券商公開研究": True
 }
-_v7_completeness = sum(_v7_components.values())/len(_v7_components)
+_v7_completeness = _v8_complete
 dt_score = int(max(0,min(100, dt_score + _v7_event["score"]*0.45)))
 _v7_up_prob = calibrated_probability_proxy(dt_score, _v7_event["score"], _v7_completeness)
 _v7_down_prob = round(100-_v7_up_prob,1)
@@ -1017,6 +1135,11 @@ _v7_down_prob = round(100-_v7_up_prob,1)
 _v7_swing_base = max(0,min(100, short*0.55 + mid*0.25 + inst_score*0.20))
 _v7_swing_up = calibrated_probability_proxy(_v7_swing_base, _v7_event["score"]*0.7, _v7_completeness)
 _v7_swing_down = round(100-_v7_swing_up,1)
+_v8_day_up_txt=f"{_v8_day_up_txt}" if _v8_prob_ok else "資料不足"
+_v8_day_down_txt=f"{_v8_day_down_txt}" if _v8_prob_ok else "—"
+_v8_swing_up_txt=f"{_v8_swing_up_txt}" if _v8_prob_ok else "資料不足"
+_v8_swing_down_txt=f"{_v8_swing_down_txt}" if _v8_prob_ok else "—"
+
 
 heat=int(np.clip(50+(12 if abs(chg)>2 else 0)+(12 if vol_ratio>=1.2 else 0),0,100))
 risk=int(np.clip(50+abs(chg)*4+(8 if pd.notna(r["RSI"]) and (r["RSI"]>75 or r["RSI"]<30) else 0),0,100))
@@ -1065,7 +1188,7 @@ st.markdown(f"""
   <div class="v6-live-card">
     <div class="kicker">SUPER DAY TRADE｜百億超級當沖雷達</div>
     <div class="v6-dt">{dt_signal}</div>
-    <div class="v7-prob">13:30前上漲機率 <b>{_v7_up_prob:.1f}%</b>　｜　下跌機率 <b>{_v7_down_prob:.1f}%</b></div>
+    <div class="v7-prob">13:30前上漲機率 <b>{_v8_day_up_txt}</b>　｜　下跌機率 <b>{_v8_day_down_txt}</b></div>
     <div class="v6-score">方向：{dt_direction}｜資料完整度 {_v7_completeness*100:.0f}%</div>
     <div class="v6-meta">{dt_reason}<br>盤中防守：{dt_def:.2f}｜壓力：{dt_res:.2f}</div>
   </div>
@@ -1081,6 +1204,28 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+
+# ===== V8 全市場資料引擎 =====
+_v8_status="可產生機率" if _v8_prob_ok else "資料不足・暫停機率判斷"
+_v8_status_icon="🟢" if _v8_prob_ok else "⚠️"
+_pc_txt=(f"成交量 P/C {_v8_pc['vol_pc']:.2f}%｜未平倉 P/C {_v8_pc['oi_pc']:.2f}%" if _v8_pc else "尚未取得")
+_tx_txt=(f"外資臺指期未平倉淨額 {int(_v8_tx['net_oi']):,} 口" if _v8_tx else "尚未取得")
+_mg_txt=("已取得" if _v8_margin else "尚未取得")
+_ld_txt=("已取得" if _v8_lending else "尚未取得")
+st.markdown(f"""
+<div class="v8-data-card">
+ <div class="kicker">V8 MARKET DATA ENGINE｜全市場資料引擎</div>
+ <div class="v8-data-title">{_v8_status_icon} {_v8_status}</div>
+ <div class="v6-meta">資料完整度 {_v8_complete*100:.0f}%｜缺少必要資料：{("、".join(_v8_missing) if _v8_missing else "無")}</div>
+ <div class="v8-grid">
+   <div><b>臺指選擇權</b><br>{_pc_txt}</div>
+   <div><b>臺指期外資</b><br>{_tx_txt}</div>
+   <div><b>融資融券</b><br>{_mg_txt}</div>
+   <div><b>借券資料</b><br>{_ld_txt}</div>
+ </div>
+</div>
+""",unsafe_allow_html=True)
+
 # ===== V7 全球事件情報 =====
 _event_icon = "🚨" if _v7_event["risk"]=="重大事件影響" else ("⚠️" if _v7_event["risk"]=="事件影響中等" else "🌐")
 st.markdown(f"""
@@ -1089,7 +1234,7 @@ st.markdown(f"""
  <div class="v7-event-title">{_event_icon} {_v7_event["risk"]}</div>
  <div class="v6-meta">已掃描台灣/國際新聞；與個股或重大市場事件相關 {_v7_event["related"]} 則｜
  事件偏多指標 {_v7_event["positive"]}｜偏空指標 {_v7_event["negative"]}</div>
- <div class="v7-beta">未來波段上漲機率 {_v7_swing_up:.1f}%｜下跌機率 {_v7_swing_down:.1f}%</div>
+ <div class="v7-beta">未來波段上漲機率 {_v8_swing_up_txt}｜下跌機率 {_v8_swing_down_txt}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1109,7 +1254,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V7.3 百億全機率決策
+    AI ACTION CENTER｜V8 百億全市場機率決策
     </div>
   <div class="decision-grid">
     <div>
@@ -1166,9 +1311,9 @@ if own=="已持有" and cost>0:
 st.markdown("### AI 模型面板")
 st.markdown(f"""<div class="panel">
 <div class="kicker">MODEL CONSENSUS</div>
-<div style="font-size:26px;font-weight:900">{overall_icon} AI 綜合上漲機率：{overall:.0f}%｜{overall_label}</div>
+<div style="font-size:26px;font-weight:900">{overall_icon} AI 綜合判斷：{overall:.0f}%｜{overall_label}</div>
 </div>""",unsafe_allow_html=True)
-models=[("技術面上漲機率",tech),("法人偏多機率",inst_score),("市場偏多機率",heat),("風險發生機率",100-risk)]
+models=[("技術面因素",tech),("法人籌碼因素",inst_score),("市場環境因素",heat),("風險因素",100-risk)]
 mc=st.columns(4)
 for col,(title,score) in zip(mc,models):
     lab,ico=trend_label(score)
@@ -1214,7 +1359,7 @@ st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 st.markdown("""
 <div class="section-pro">
-  <div class="section-pro-title">▥ 法人偏多機率</div>
+  <div class="section-pro-title">▥ 法人籌碼因素</div>
   <div class="section-pro-sub">外資・投信・自營商｜觀察近期資金方向</div>
 </div>
 """, unsafe_allow_html=True)
