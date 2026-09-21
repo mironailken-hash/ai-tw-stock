@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from urllib.parse import quote
 
-st.set_page_config(page_title="KEN AI 台股智慧分析 V4 Premium", page_icon="📈", layout="wide")
+st.set_page_config(page_title="KEN AI 台股智慧分析 V5 即時決策版", page_icon="📈", layout="wide")
 
 API = "https://api.finmindtrade.com/api/v4/data"
 
@@ -347,7 +347,7 @@ div[data-testid="stForm"]{
 }
 
 
-/* ===== V4.8 主畫面搜尋 ===== */
+/* ===== V5 主畫面搜尋 ===== */
 .search-title-box{
     margin-top:14px;
     margin-bottom:6px;
@@ -503,6 +503,63 @@ def institutional_score(inst):
     net=float((b-s).tail(5).sum())
     return (72 if net>0 else 28 if net<0 else 50),net
 
+
+def realtime_quote(sid):
+    """TWSE MIS 公開盤中行情。上市先查 tse，再查 otc；失敗則回傳空資料。"""
+    headers={"User-Agent":"Mozilla/5.0","Referer":"https://mis.twse.com.tw/"}
+    for market in ["tse","otc"]:
+        try:
+            url="https://mis.twse.com.tw/stock/api/getStockInfo.jsp"
+            params={"ex_ch":f"{market}_{sid}.tw","json":"1","delay":"0"}
+            j=requests.get(url,params=params,headers=headers,timeout=8).json()
+            msg=j.get("msgArray",[])
+            if msg:
+                x=msg[0]
+                def num(v):
+                    try:
+                        # MIS sometimes returns '-' or comma separated strings
+                        return float(str(v).replace(",","")) if str(v) not in ["","-","--"] else np.nan
+                    except Exception:
+                        return np.nan
+                z=num(x.get("z"))
+                y=num(x.get("y"))
+                o=num(x.get("o"))
+                h=num(x.get("h"))
+                l=num(x.get("l"))
+                v=num(x.get("v"))
+                t=x.get("t","")
+                d=x.get("d","")
+                name=x.get("n","")
+                if pd.isna(z):
+                    # If no last trade, use best bid/ask midpoint when available
+                    bids=str(x.get("b","")).split("_")
+                    asks=str(x.get("a","")).split("_")
+                    bid=num(bids[0]) if bids else np.nan
+                    ask=num(asks[0]) if asks else np.nan
+                    if pd.notna(bid) and pd.notna(ask): z=(bid+ask)/2
+                    elif pd.notna(bid): z=bid
+                    elif pd.notna(ask): z=ask
+                return {"price":z,"prev":y,"open":o,"high":h,"low":l,"volume":v,
+                        "time":f"{d} {t}".strip(),"market":market,"name":name}
+        except Exception:
+            pass
+    return {}
+
+def broker_research(sid, name, n=8):
+    """只搜尋公開券商/投顧研究索引，不把一般新聞雜訊混入模型。"""
+    domains=[
+        ("凱基投顧","kgisia.com.tw"),
+        ("凱基證券","kgi.com.tw"),
+        ("群益投顧","capitalim.com.tw"),
+    ]
+    out=[]
+    for broker,domain in domains:
+        items=rss(f'site:{domain} "{sid}" "{name}"',3)
+        for it in items:
+            it["broker"]=broker
+            out.append(it)
+    return out[:n]
+
 def rss(q,n=5):
     try:
         url=f"https://news.google.com/rss/search?q={quote(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
@@ -510,20 +567,36 @@ def rss(q,n=5):
         return [{"title":x.findtext("title",""),"link":x.findtext("link","")} for x in root.findall(".//item")[:n]]
     except Exception:return []
 
-def attack_status(short, close, support, resistance, vol_ratio):
-    breakout=max(resistance, close*1.015)
+def attack_status(short, close, support, resistance, vol_ratio, inst_score=50):
+    """V5 五級市場訊號：清楚，但以條件式模型訊號呈現。"""
+    breakout=max(resistance, close*1.01)
     pull_lo=support
     pull_hi=support*1.025
     weak=support*0.985
-    if short>=78 and close>=resistance and vol_ratio>=1.2:
-        return "🚀 短線進攻訊號成立","多方動能與突破條件較完整",breakout,pull_lo,pull_hi,weak
-    if short>=65:
-        return "🟢 等待突破進攻","偏多，但等待突破確認可降低假突破風險",breakout,pull_lo,pull_hi,weak
-    if short>=42:
-        return "🟡 觀望","短線條件尚未形成一致方向",breakout,pull_lo,pull_hi,weak
-    if short>=25:
-        return "⚠️ 轉弱警戒","短線結構偏弱，先等待重新站回關鍵區",breakout,pull_lo,pull_hi,weak
-    return "🔴 短線弱勢","目前短線動能明顯偏弱",breakout,pull_lo,pull_hi,weak
+
+    confirmations=0
+    confirmations += 1 if short>=70 else 0
+    confirmations += 1 if close>=resistance*0.995 else 0
+    confirmations += 1 if vol_ratio>=1.15 else 0
+    confirmations += 1 if inst_score>=55 else 0
+
+    if short>=78 and confirmations>=3:
+        label="🟢 模型訊號：可買進"
+        reason="短線趨勢、價格突破、量能與籌碼中至少三項同步確認。"
+    elif short>=62 and confirmations>=2:
+        label="🟡 模型訊號：等待買進"
+        reason="方向偏強，但確認條件尚未完整；等待突破或拉回止穩。"
+    elif short>=42:
+        label="⚪ 模型訊號：觀望"
+        reason="多空訊號尚未形成明顯優勢。"
+    elif short>=25:
+        label="🟠 模型訊號：減碼警戒"
+        reason="短線結構轉弱，防守條件的重要性上升。"
+    else:
+        label="🔴 模型訊號：賣出"
+        reason="短線趨勢與動能明顯偏弱，模型進入防守狀態。"
+    return label,reason,breakout,pull_lo,pull_hi,weak,confirmations
+
 
 # =========================
 # Header + Search
@@ -546,7 +619,7 @@ st.markdown(f"""
 """,unsafe_allow_html=True)
 
 
-# ===== V4.8：搜尋框固定放在主畫面，手機／電腦都直接可用 =====
+# ===== V5：搜尋框固定放在主畫面，手機／電腦都直接可用 =====
 try:
     token = st.secrets.get("FINMIND_TOKEN", "")
 except Exception:
@@ -616,6 +689,21 @@ d=add_indicators(price)
 r=d.iloc[-1]
 close=float(r["close"])
 prev=float(d.iloc[-2]["close"]) if len(d)>1 else close
+
+# 盤中優先採 TWSE MIS 最新成交；休市/無成交則自動回退最新日線
+rt=realtime_quote(sid)
+rt_price=rt.get("price",np.nan) if rt else np.nan
+rt_prev=rt.get("prev",np.nan) if rt else np.nan
+if pd.notna(rt_price) and rt_price>0:
+    close=float(rt_price)
+    if pd.notna(rt_prev) and rt_prev>0:
+        prev=float(rt_prev)
+    data_time=rt.get("time","盤中")
+    data_mode="盤中即時行情"
+else:
+    data_time=str(pd.to_datetime(r["date"]).date())
+    data_mode="最新交易日收盤"
+
 chg=(close/prev-1)*100 if prev else 0
 vols=pd.to_numeric(d["Trading_Volume"],errors="coerce")
 vol=float(vols.iloc[-1])
@@ -640,14 +728,16 @@ tech=int(round(short*.5+mid*.3+long*.2))
 overall=int(np.clip(round(tech*.58+inst_score*.27+heat*.15-(risk-50)*.08),0,100))
 overall_label,overall_icon=trend_label(overall)
 
-status,status_reason,breakout,pull_lo,pull_hi,weak=attack_status(short,close,support,resistance,vol_ratio)
+status,status_reason,breakout,pull_lo,pull_hi,weak,confirmations=attack_status(
+    short,close,support,resistance,vol_ratio,inst_score
+)
 
 # =========================
 # 簡潔首頁
 # =========================
 st.markdown(f"## {sid} {name or q}")
 m1,m2,m3,m4=st.columns(4)
-m1.metric("最新收盤",f"{close:.2f}",f"{chg:+.2f}%")
+m1.metric("最新價格",f"{close:.2f}",f"{chg:+.2f}%")
 m2.metric("短線強度",f"{short}/100")
 m3.metric("量能比",f"{vol_ratio:.2f}x")
 m4.metric("AI 綜合訊號",f"{overall}/100")
@@ -671,12 +761,13 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜短線市場訊號
+    AI ACTION CENTER｜V5 即時決策
     </div>
   <div class="decision-grid">
     <div>
-      <div class="decision-status">{verdict}</div>
-      <div class="decision-note">{verdict_note}</div>
+      <div class="decision-status">{status}</div>
+      <div class="decision-note">{status_reason}</div>
+      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜確認條件 {confirmations}/4</div>
     </div>
     <div class="decision-score">{short}<span style="font-size:18px;color:#9db2c8"> / 100</span></div>
   </div>
@@ -824,26 +915,13 @@ dark_table = f"""
 """
 st.markdown(dark_table, unsafe_allow_html=True)
 
-st.markdown("### 公開市場情報")
-news=rss(f"{sid} {name} 台股",6)
-if news:
-    for n in news: st.markdown(f"- [{n['title']}]({n['link']})")
+st.markdown("### 券商公開研究")
+research_items=broker_research(sid,name,8)
+if research_items:
+    for item in research_items:
+        st.markdown(f"- **{item['broker']}**｜[{item['title']}]({item['link']})")
 else:
-    st.caption("目前未取得相關公開新聞索引。")
-
-n1,n2=st.columns(2)
-with n1:
-    st.markdown("#### 錢線百分百相關索引")
-    tv=rss(f'"錢線百分百" {sid} {name}',4)
-    if tv:
-        for n in tv: st.markdown(f"- [{n['title']}]({n['link']})")
-    else: st.caption("目前沒有近期相關公開索引。")
-with n2:
-    st.markdown("#### 股市爆料同學會相關索引")
-    forum=rss(f'"股市爆料同學會" {sid} {name}',4)
-    if forum:
-        for n in forum: st.markdown(f"- [{n['title']}]({n['link']})")
-    else: st.caption("目前沒有近期相關公開索引。")
+    st.caption("目前未找到與此個股直接相關的近期公開券商研究索引。一般新聞不列入，避免資訊雜訊。")
 
 st.markdown(f"""
 <div class="panel">
@@ -854,4 +932,4 @@ st.markdown(f"""
 </div>
 """,unsafe_allow_html=True)
 
-st.warning("本系統為市場研究與資訊整理工具。『進攻／觀望／轉弱』代表模型市場訊號，不保證未來漲跌，也不構成個別投資建議。")
+st.warning("「可買進／等待買進／觀望／減碼警戒／賣出」為程式依即時或最新市場資料計算的模型訊號，不是保證獲利或個人化投資指示；盤中行情與券商公開研究可能有延遲或資料缺漏。")
