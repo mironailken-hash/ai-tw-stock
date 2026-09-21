@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from urllib.parse import quote
 
-st.set_page_config(page_title="KEN AI 台股智慧分析 V5 即時決策版", page_icon="📈", layout="wide")
+st.set_page_config(page_title="KEN AI 台股智慧分析 V5.1 精準決策版", page_icon="📈", layout="wide")
 
 API = "https://api.finmindtrade.com/api/v4/data"
 
@@ -393,6 +393,22 @@ div[data-baseweb="input"] input::placeholder{
     }
 }
 
+
+/* ===== V5.1 精簡專業版 ===== */
+.data-badge{
+    display:inline-block;
+    padding:5px 10px;
+    border:1px solid rgba(221,183,68,.55);
+    border-radius:999px;
+    background:#071522;
+    color:#DCC66A;
+    font-size:12px;
+    margin:4px 4px 4px 0;
+}
+@media(max-width:768px){
+    .data-badge{font-size:11px;padding:4px 8px;}
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -607,6 +623,12 @@ hero_bg = (
     if BANNER_B64 else
     "linear-gradient(110deg,#07182a,#020811)"
 )
+# V5.1：法人分數完成後再計算最終市場訊號，避免變數尚未建立
+status,status_reason,breakout,pull_lo,pull_hi,weak,confirmations=attack_status(
+    short,close,support,resistance,vol_ratio,inst_score
+)
+
+
 st.markdown(f"""
 <div class="hero" style="min-height:235px;background-image:{hero_bg};background-size:cover;background-position:center 27%;display:flex;align-items:center;">
   <div style="max-width:680px">
@@ -699,7 +721,7 @@ if pd.notna(rt_price) and rt_price>0:
     if pd.notna(rt_prev) and rt_prev>0:
         prev=float(rt_prev)
     data_time=rt.get("time","盤中")
-    data_mode="盤中即時行情"
+    data_mode="盤中最新取得行情"
 else:
     data_time=str(pd.to_datetime(r["date"]).date())
     data_mode="最新交易日收盤"
@@ -727,10 +749,6 @@ risk=int(np.clip(50+abs(chg)*4+(8 if pd.notna(r["RSI"]) and (r["RSI"]>75 or r["R
 tech=int(round(short*.5+mid*.3+long*.2))
 overall=int(np.clip(round(tech*.58+inst_score*.27+heat*.15-(risk-50)*.08),0,100))
 overall_label,overall_icon=trend_label(overall)
-
-status,status_reason,breakout,pull_lo,pull_hi,weak,confirmations=attack_status(
-    short,close,support,resistance,vol_ratio,inst_score
-)
 
 # =========================
 # 簡潔首頁
@@ -761,7 +779,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V5 即時決策
+    AI ACTION CENTER｜V5.1 精準決策
     </div>
   <div class="decision-grid">
     <div>
@@ -932,4 +950,4 @@ st.markdown(f"""
 </div>
 """,unsafe_allow_html=True)
 
-st.warning("「可買進／等待買進／觀望／減碼警戒／賣出」為程式依即時或最新市場資料計算的模型訊號，不是保證獲利或個人化投資指示；盤中行情與券商公開研究可能有延遲或資料缺漏。")
+st.warning("「可買進／等待買進／觀望／減碼警戒／賣出」為程式依最新取得或最新交易日市場資料計算的模型訊號，不是保證獲利或個人化投資指示；盤中行情與券商公開研究可能有延遲或資料缺漏。")
