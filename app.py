@@ -447,6 +447,27 @@ div[data-testid="stForm"] button p{
  .top-signature{text-align:center;font-size:10px;letter-spacing:.04em;padding-bottom:6px;}
 }
 
+
+/* ===== V6 LIVE PRICE + DAY TRADE RADAR ===== */
+.v6-live-grid{
+ display:grid;grid-template-columns:1fr 1.45fr;gap:12px;margin:10px 0 14px;
+}
+.v6-live-card{
+ background:linear-gradient(145deg,#071522,#091B2A);
+ border:1px solid rgba(221,183,68,.65);border-radius:16px;padding:16px 18px;
+ box-shadow:0 10px 28px rgba(0,0,0,.24);
+}
+.v6-price{font-size:40px;font-weight:950;color:#F5F7FA;line-height:1.05;margin-top:6px;}
+.v6-change{font-size:22px;font-weight:900;margin-top:5px;}
+.v6-change.up{color:#FF5B61}.v6-change.down{color:#49D17D}
+.v6-dt{font-size:25px;font-weight:950;color:#F2D56B;margin:7px 0 5px;}
+.v6-score{font-size:15px;font-weight:800;color:#E9EEF3;margin-bottom:7px;}
+.v6-meta{font-size:12px;line-height:1.65;color:#AFC0D0;}
+@media(max-width:768px){
+ .v6-live-grid{grid-template-columns:1fr;gap:8px;}
+ .v6-price{font-size:34px}.v6-dt{font-size:22px}
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -599,6 +620,63 @@ def realtime_quote(sid):
             pass
     return {}
 
+
+def market_is_open_tw():
+    """台灣集中市場一般交易時段：平日 09:00~13:30；實際休市日由行情是否取得再做第二層判斷。"""
+    from datetime import datetime
+    try:
+        from zoneinfo import ZoneInfo
+        now=datetime.now(ZoneInfo("Asia/Taipei"))
+    except Exception:
+        now=datetime.now()
+    mins=now.hour*60+now.minute
+    return now.weekday()<5 and 9*60 <= mins <= 13*60+30, now
+
+def daytrade_radar(close, prev, day_open, day_high, day_low, vol_ratio,
+                   short_score, inst_score, support, resistance):
+    """盤中當沖雷達：只做市場訊號，不假裝預知13:30收盤。"""
+    if not prev or prev <= 0:
+        return "⚪ 觀望", 50, "資料不足", "盤整", support, resistance
+
+    pct=(close/prev-1)*100
+    open_pct=(close/day_open-1)*100 if day_open and day_open>0 else 0
+    rng=max(day_high-day_low, 0.01) if day_high and day_low else max(close*0.01,0.01)
+    loc=(close-day_low)/rng if day_high and day_low else .5
+
+    score=50
+    score += max(-15,min(15,pct*4))
+    score += max(-8,min(8,open_pct*3))
+    score += 8 if loc>=.72 else (-8 if loc<=.28 else 0)
+    score += 8 if vol_ratio>=1.5 else (4 if vol_ratio>=1.15 else (-3 if vol_ratio<.75 else 0))
+    score += (short_score-50)*0.18
+    score += (inst_score-50)*0.08
+    score=max(0,min(100,round(score)))
+
+    if score>=75:
+        signal="🟢 偏多當沖訊號"
+        direction="偏多"
+        reason="價格位置、盤中動能與量能多項偏強；仍需守住盤中防守位。"
+    elif score>=62:
+        signal="🟡 震盪偏多"
+        direction="震盪偏多"
+        reason="盤中結構偏多，但尚未形成高一致性訊號。"
+    elif score>=42:
+        signal="⚪ 觀望"
+        direction="盤整"
+        reason="多空條件接近，追價風險較高。"
+    elif score>=28:
+        signal="🟠 震盪偏空"
+        direction="震盪偏空"
+        reason="盤中價格結構偏弱，反彈仍需重新確認量價。"
+    else:
+        signal="🔴 偏空當沖訊號"
+        direction="偏空"
+        reason="盤中動能與價格位置明顯偏弱，以風險控制優先。"
+
+    intraday_def=max(day_low if day_low else support, support)
+    intraday_res=min(day_high if day_high else resistance, resistance) if resistance else day_high
+    return signal,score,reason,direction,intraday_def,intraday_res
+
 def broker_research(sid, name, n=8):
     """只搜尋公開券商/投顧研究索引，不把一般新聞雜訊混入模型。"""
     domains=[
@@ -709,11 +787,17 @@ with st.form("main_stock_search", clear_on_submit=False):
 if search_run:
     if search_q.strip():
         st.session_state["active_stock_v48"] = search_q.strip()
+        st.query_params["stock"] = search_q.strip()
         st.session_state["active_own_v48"] = own
         st.session_state["active_cost_v48"] = cost
         st.session_state["active_shares_v48"] = shares
     else:
         st.warning("請先輸入股票代號或名稱。")
+
+if "active_stock_v48" not in st.session_state:
+    _qp_stock = st.query_params.get("stock", "")
+    if _qp_stock:
+        st.session_state["active_stock_v48"] = _qp_stock
 
 if "active_stock_v48" not in st.session_state:
     st.markdown("""
@@ -729,6 +813,12 @@ q = st.session_state["active_stock_v48"]
 own = st.session_state.get("active_own_v48", own)
 cost = st.session_state.get("active_cost_v48", cost)
 shares = st.session_state.get("active_shares_v48", shares)
+
+
+# 開盤中每 8 秒自動刷新；使用者不需要重按搜尋
+_market_open, _tw_now = market_is_open_tw()
+if _market_open:
+    st.markdown('<meta http-equiv="refresh" content="8">', unsafe_allow_html=True)
 
 sid,name=resolve_stock(q)
 if not sid:
@@ -782,6 +872,21 @@ status,status_reason,breakout,pull_lo,pull_hi,weak,confirmations=attack_status(
     short,close,support,resistance,vol_ratio,inst_score
 )
 
+# V6 即時價格與 AI 當沖雷達
+_market_open, _tw_now = market_is_open_tw()
+rt_open = rt.get("open", np.nan) if rt else np.nan
+rt_high = rt.get("high", np.nan) if rt else np.nan
+rt_low  = rt.get("low", np.nan) if rt else np.nan
+rt_vol  = rt.get("volume", np.nan) if rt else np.nan
+
+day_open = float(rt_open) if pd.notna(rt_open) and rt_open>0 else float(r.get("open",close))
+day_high = float(rt_high) if pd.notna(rt_high) and rt_high>0 else float(r.get("max",close))
+day_low  = float(rt_low) if pd.notna(rt_low) and rt_low>0 else float(r.get("min",close))
+
+dt_signal,dt_score,dt_reason,dt_direction,dt_def,dt_res = daytrade_radar(
+    close,prev,day_open,day_high,day_low,vol_ratio,short,inst_score,support,resistance
+)
+
 heat=int(np.clip(50+(12 if abs(chg)>2 else 0)+(12 if vol_ratio>=1.2 else 0),0,100))
 risk=int(np.clip(50+abs(chg)*4+(8 if pd.notna(r["RSI"]) and (r["RSI"]>75 or r["RSI"]<30) else 0),0,100))
 tech=int(round(short*.5+mid*.3+long*.2))
@@ -812,12 +917,35 @@ else:
     verdict = "弱勢｜尚未形成進攻訊號"
     verdict_note = "短線結構偏弱，優先等待趨勢修復，而不是追價。"
 
+
+# ===== V6 最上方：即時價格 + AI 當沖雷達 =====
+rt_state = "🟢 開盤中・自動更新" if _market_open and rt and pd.notna(rt_price) else "⚪ 非開盤時段／最新取得資料"
+price_source = data_mode
+update_text = data_time if data_time else (_tw_now.strftime("%Y-%m-%d %H:%M:%S") if _tw_now else "")
+
+st.markdown(f"""
+<div class="v6-live-grid">
+  <div class="v6-live-card">
+    <div class="kicker">LIVE PRICE｜即時價格</div>
+    <div class="v6-price">{close:.2f}</div>
+    <div class="v6-change {'up' if chg>=0 else 'down'}">{chg:+.2f}%</div>
+    <div class="v6-meta">{rt_state}<br>{price_source}｜{update_text}</div>
+  </div>
+  <div class="v6-live-card">
+    <div class="kicker">DAY TRADE RADAR｜AI 當沖雷達</div>
+    <div class="v6-dt">{dt_signal}</div>
+    <div class="v6-score">當沖訊號 {dt_score}/100｜13:30前方向：{dt_direction}</div>
+    <div class="v6-meta">{dt_reason}<br>盤中防守參考：{dt_def:.2f}｜壓力參考：{dt_res:.2f}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
 st.markdown(f"""
 <div class="decision">
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V5.1 精準決策
+    AI ACTION CENTER｜V6 百億全資訊決策
     </div>
   <div class="decision-grid">
     <div>
