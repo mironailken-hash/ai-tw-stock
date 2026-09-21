@@ -313,6 +313,39 @@ hr{border-color:#20354d;}
   h3{font-size:20px !important;}
 }
 
+
+/* V4.7 手機快速重新搜尋 */
+div[data-testid="stForm"]{
+    background:linear-gradient(145deg,#081827,#06121F);
+    border:1px solid rgba(221,183,68,.58);
+    border-radius:14px;
+    padding:10px 12px 4px 12px;
+    margin:8px 0 16px 0;
+}
+@media (max-width:768px){
+    div[data-testid="stForm"]{
+        position:sticky;
+        top:6px;
+        z-index:999;
+        box-shadow:0 10px 28px rgba(0,0,0,.38);
+    }
+    div[data-testid="stForm"] [data-testid="stHorizontalBlock"]{
+        flex-direction:row !important;
+        align-items:end !important;
+        gap:8px !important;
+    }
+    div[data-testid="stForm"] [data-testid="column"]:first-child{
+        width:72% !important;
+        min-width:72% !important;
+        flex:0 0 72% !important;
+    }
+    div[data-testid="stForm"] [data-testid="column"]:last-child{
+        width:28% !important;
+        min-width:28% !important;
+        flex:0 0 28% !important;
+    }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -467,29 +500,58 @@ st.markdown(f"""
 
 with st.sidebar:
     st.markdown("## 股票搜尋")
-    q=st.text_input("輸入股票代號或名稱",value="",placeholder="例如：6213、聯茂、台積電")
-    own=st.selectbox("持股狀態",["尚未持有","已持有"])
-    cost=st.number_input("持有成本",min_value=0.0,value=0.0,step=0.5,disabled=own=="尚未持有")
-    shares=st.number_input("持有股數",min_value=0,value=0,step=100,disabled=own=="尚未持有")
+    q=st.text_input("輸入股票代號或名稱",value="",placeholder="例如：6213、聯茂、台積電",key="sidebar_stock")
+    own=st.selectbox("持股狀態",["尚未持有","已持有"],key="sidebar_own")
+    cost=st.number_input("持有成本",min_value=0.0,value=0.0,step=0.5,disabled=own=="尚未持有",key="sidebar_cost")
+    shares=st.number_input("持有股數",min_value=0,value=0,step=100,disabled=own=="尚未持有",key="sidebar_shares")
     try:
         token = st.secrets.get("FINMIND_TOKEN", "")
     except Exception:
         token = ""
     run=st.button("開始分析",use_container_width=True)
 
-if not run:
+# 將最後一次分析保留在 session，手機側欄收起後結果不會消失
+if run:
+    if q.strip():
+        st.session_state["active_stock"] = q.strip()
+        st.session_state["active_own"] = own
+        st.session_state["active_cost"] = cost
+        st.session_state["active_shares"] = shares
+    else:
+        st.warning("請先輸入股票代號或名稱。")
+
+if "active_stock" not in st.session_state:
     st.markdown("""
     <div class="panel">
       <div class="kicker">QUICK DECISION</div>
       <div class="action-title">搜尋一檔股票，先看短線總結</div>
-      <div class="action-sub">首頁只保留：目前狀態、何時轉強、支撐壓力、短中長線。詳細模型收在展開面板內。</div>
+      <div class="action-sub">手機與電腦都可直接搜尋股票；分析後可在結果頁上方快速更換股票。</div>
     </div>
     """,unsafe_allow_html=True)
     st.stop()
 
-if not q.strip():
-    st.warning("請先輸入股票代號或名稱。")
-    st.stop()
+# 手機友善：結果頁最上方永遠保留「快速重新搜尋」
+with st.form("mobile_quick_search", clear_on_submit=False):
+    c1, c2 = st.columns([4,1])
+    with c1:
+        quick_q = st.text_input(
+            "快速重新搜尋",
+            value="",
+            placeholder="輸入股票代號或名稱，例如：2330、台積電",
+            key="quick_stock"
+        )
+    with c2:
+        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
+        quick_run = st.form_submit_button("搜尋", use_container_width=True)
+
+if quick_run and quick_q.strip():
+    st.session_state["active_stock"] = quick_q.strip()
+    st.rerun()
+
+q = st.session_state["active_stock"]
+own = st.session_state.get("active_own", "尚未持有")
+cost = st.session_state.get("active_cost", 0.0)
+shares = st.session_state.get("active_shares", 0)
 
 sid,name=resolve_stock(q)
 if not sid:
