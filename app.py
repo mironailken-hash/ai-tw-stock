@@ -1169,6 +1169,22 @@ overall_label,overall_icon=trend_label(overall)
 st.markdown(f"## {sid} {name or q}")
 m1,m2,m3,m4=st.columns(4)
 m1.metric("最新價格",f"{close:.2f}",f"{chg:+.2f}%")
+
+def _v9_strength_label(v):
+    try:
+        v=float(v)
+        if v >= 75: return "強勢偏多"
+        if v >= 60: return "偏多"
+        if v >= 45: return "中性"
+        if v >= 30: return "偏空"
+        return "強勢偏空"
+    except Exception:
+        return "資料不足"
+
+short_label=_v9_strength_label(short)
+
+mid_label=_v9_strength_label(mid)
+long_label=_v9_strength_label(long)
 m2.metric("短線強度",f"{short_label}")
 m3.metric("量能比",f"{vol_ratio:.2f}x")
 m4.metric("AI 綜合訊號",f"{overall:.0f}%")
