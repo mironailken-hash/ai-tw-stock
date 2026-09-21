@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import plotly.graph_objects as go
 import xml.etree.ElementTree as ET
 import base64
 from pathlib import Path
@@ -172,6 +173,49 @@ hr{border-color:#20354d;}
 [data-testid="stElementContainer"]{
     background-color:transparent;
 }
+
+
+/* ===== V4.5 真正全深色圖表與法人表格 ===== */
+[data-testid="stPlotlyChart"]{
+    background:linear-gradient(145deg,#071827,#04111E) !important;
+    border:1px solid #1D3A53 !important;
+    border-radius:16px !important;
+    padding:10px !important;
+    box-shadow:0 12px 30px rgba(0,0,0,.22) !important;
+}
+.inst-table-wrap{
+    width:100%;
+    overflow-x:auto;
+    background:linear-gradient(145deg,#071827,#04111E);
+    border:1px solid #1D3A53;
+    border-radius:16px;
+    box-shadow:0 12px 30px rgba(0,0,0,.22);
+}
+.inst-table{
+    width:100%;
+    border-collapse:collapse;
+    color:#DDE8F2;
+    font-size:14px;
+}
+.inst-table th{
+    background:#0B2033;
+    color:#F0C95C;
+    text-align:left;
+    padding:13px 14px;
+    border-bottom:1px solid #29445D;
+    white-space:nowrap;
+}
+.inst-table td{
+    padding:12px 14px;
+    border-bottom:1px solid rgba(75,111,140,.20);
+    background:rgba(6,21,34,.72);
+    white-space:nowrap;
+}
+.inst-table tr:hover td{background:#0B2134;}
+.inst-table tr:last-child td{border-bottom:0;}
+.tw-red{color:#FF6666;font-weight:850;}
+.tw-green{color:#45D483;font-weight:850;}
+.muted{color:#A4B5C5;font-weight:750;}
 
 </style>
 """, unsafe_allow_html=True)
@@ -484,7 +528,34 @@ st.markdown("""
   <div class="section-pro-sub">K線趨勢與均線結構｜掌握價格方向與波動變化</div>
 </div>
 """, unsafe_allow_html=True)
-st.line_chart(d.set_index("date")[["close","MA5","MA20","MA60"]].tail(120),use_container_width=True)
+chart_df = d.tail(120).copy()
+fig = go.Figure()
+line_defs = [
+    ("close", "收盤價", "#F2C94C", 3.0),
+    ("MA5", "MA5", "#52B6FF", 1.8),
+    ("MA20", "MA20", "#2F80ED", 1.8),
+    ("MA60", "MA60", "#EB5757", 1.8),
+]
+for key, label, color, width in line_defs:
+    if key in chart_df.columns:
+        fig.add_trace(go.Scatter(
+            x=chart_df["date"], y=chart_df[key],
+            mode="lines", name=label,
+            line=dict(color=color, width=width),
+            hovertemplate="%{x|%Y-%m-%d}<br>"+label+"：%{y:.2f}<extra></extra>"
+        ))
+fig.update_layout(
+    height=430,
+    margin=dict(l=20,r=20,t=24,b=20),
+    paper_bgcolor="#061522",
+    plot_bgcolor="#061522",
+    font=dict(color="#D9E5F0"),
+    legend=dict(orientation="h", yanchor="bottom", y=1.01, xanchor="left", x=0),
+    hovermode="x unified",
+    xaxis=dict(showgrid=False, color="#8EA7BE", zeroline=False),
+    yaxis=dict(gridcolor="rgba(110,145,175,.14)", color="#8EA7BE", zeroline=False),
+)
+st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 st.markdown("""
 <div class="section-pro">
@@ -501,8 +572,51 @@ if not inst.empty:
         inst_show=inst_show.rename(columns={"name":"法人名稱"})
     inst_show=inst_show.rename(columns={"date":"日期","buy":"買進","sell":"賣出"})
     wanted=[x for x in ["日期","法人名稱","買進","賣出"] if x in inst_show.columns]
-    st.dataframe(inst_show[wanted].tail(20) if wanted else inst_show.tail(20),
-                 use_container_width=True,hide_index=True)
+    table_df = (inst_show[wanted].tail(20) if wanted else inst_show.tail(20)).copy()
+
+# 數值欄位格式與淨額
+for col in ["買進","賣出"]:
+    if col in table_df.columns:
+        table_df[col] = pd.to_numeric(table_df[col], errors="coerce").fillna(0)
+
+if "買進" in table_df.columns and "賣出" in table_df.columns:
+    table_df["淨買賣"] = table_df["買進"] - table_df["賣出"]
+
+def money_cell(v, net=False):
+    try:
+        v=float(v)
+        if net:
+            cls="tw-red" if v>0 else "tw-green" if v<0 else "muted"
+            sign="+" if v>0 else ""
+            return f'<span class="{cls}">{sign}{v:,.0f}</span>'
+        return f'{v:,.0f}'
+    except Exception:
+        return str(v)
+
+headers = "".join(f"<th>{c}</th>" for c in table_df.columns)
+rows = []
+for _, rr in table_df.iterrows():
+    cells=[]
+    for c in table_df.columns:
+        val=rr[c]
+        if c=="淨買賣":
+            shown=money_cell(val, True)
+        elif c in ["買進","賣出"]:
+            shown=money_cell(val)
+        else:
+            shown=str(val)
+        cells.append(f"<td>{shown}</td>")
+    rows.append("<tr>"+"".join(cells)+"</tr>")
+
+dark_table = f"""
+<div class="inst-table-wrap">
+<table class="inst-table">
+<thead><tr>{headers}</tr></thead>
+<tbody>{''.join(rows)}</tbody>
+</table>
+</div>
+"""
+st.markdown(dark_table, unsafe_allow_html=True)
 
 st.markdown("### 公開市場情報")
 news=rss(f"{sid} {name} 台股",6)
