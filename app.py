@@ -3,12 +3,22 @@ import pandas as pd
 import numpy as np
 import requests
 import xml.etree.ElementTree as ET
+import base64
+from pathlib import Path
 from datetime import date, timedelta
 from urllib.parse import quote
 
-st.set_page_config(page_title="KEN AI 台股智慧分析 V3 Pro", page_icon="📈", layout="wide")
+st.set_page_config(page_title="KEN AI 台股智慧分析 V4 Premium", page_icon="📈", layout="wide")
 
 API = "https://api.finmindtrade.com/api/v4/data"
+
+def local_image_b64(path):
+    try:
+        return base64.b64encode(Path(path).read_bytes()).decode()
+    except Exception:
+        return ""
+
+BANNER_B64 = local_image_b64("assets/banner.png")
 
 # =========================
 # 專業深色介面
@@ -233,10 +243,20 @@ def attack_status(short, close, support, resistance, vol_ratio):
 # =========================
 # Header + Search
 # =========================
-st.markdown("""
-<div class="hero">
-  <div class="hero-title"><span class="gold">KEN AI</span> 台股智慧決策中心</div>
-  <div class="hero-sub">TAIWAN EQUITY INTELLIGENCE TERMINAL　｜　市場訊號・法人籌碼・趨勢決策</div>
+hero_bg = (
+    f"linear-gradient(90deg,rgba(3,10,18,.98) 0%,rgba(3,10,18,.82) 42%,rgba(3,10,18,.18) 100%),"
+    f"url('data:image/png;base64,{BANNER_B64}')"
+    if BANNER_B64 else
+    "linear-gradient(110deg,#07182a,#020811)"
+)
+st.markdown(f"""
+<div class="hero" style="min-height:235px;background-image:{hero_bg};background-size:cover;background-position:center 27%;display:flex;align-items:center;">
+  <div style="max-width:680px">
+    <div class="kicker">TAIWAN EQUITY INTELLIGENCE TERMINAL</div>
+    <div class="hero-title"><span class="gold">KEN AI</span> 台股智慧決策系統</div>
+    <div class="hero-sub" style="font-size:16px;margin-top:10px">市場訊號 × 法人籌碼 × 趨勢結構 × 風險驗證</div>
+    <div style="margin-top:18px;color:#e8d18b;font-weight:800">用條件確認趨勢，不用情緒猜行情</div>
+  </div>
 </div>
 """,unsafe_allow_html=True)
 
@@ -246,7 +266,10 @@ with st.sidebar:
     own=st.selectbox("持股狀態",["尚未持有","已持有"])
     cost=st.number_input("持有成本",min_value=0.0,value=0.0,step=0.5,disabled=own=="尚未持有")
     shares=st.number_input("持有股數",min_value=0,value=0,step=100,disabled=own=="尚未持有")
-    token=st.text_input("FinMind Token",type="password",placeholder="可先留空測試")
+    try:
+        token = st.secrets.get("FINMIND_TOKEN", "")
+    except Exception:
+        token = ""
     run=st.button("開始分析",use_container_width=True)
 
 if not run:
@@ -312,21 +335,21 @@ m4.metric("AI 綜合訊號",f"{overall}/100")
 
 # 首屏決策卡：先回答「現在是否具備短線進攻條件」
 if short >= 78 and close >= resistance and vol_ratio >= 1.2:
-    verdict = "目前具備短線進攻條件"
+    verdict = "短線進攻訊號成立"
     verdict_note = "突破、量能與短線模型同時達標；仍需留意跌回突破區後的失效風險。"
 elif short >= 65:
-    verdict = "目前偏強，但先等突破確認"
+    verdict = "偏強｜等待突破確認"
     verdict_note = "方向偏多，但尚未同時滿足突破與量能確認，不把『偏多』直接當成已成立的進攻訊號。"
 elif short >= 42:
-    verdict = "目前不適合進攻，先觀望"
+    verdict = "觀望｜尚未形成進攻訊號"
     verdict_note = "短線訊號尚未形成一致優勢；等待突破或拉回止穩後再重新判讀。"
 else:
-    verdict = "目前不適合進攻"
+    verdict = "弱勢｜尚未形成進攻訊號"
     verdict_note = "短線結構偏弱，優先等待趨勢修復，而不是追價。"
 
 st.markdown(f"""
 <div class="decision">
-  <div class="kicker">AI ACTION CENTER｜短線決策中心</div>
+  <div class="kicker">AI ACTION CENTER｜短線市場訊號</div>
   <div class="decision-grid">
     <div>
       <div class="decision-status">{verdict}</div>
