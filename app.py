@@ -35,7 +35,22 @@ st.markdown("""
       linear-gradient(135deg,#030914 0%,#071523 46%,#040b15 100%);
     color:#F4F7FB;
 }
-.block-container{max-width:1380px;padding-top:1.1rem;padding-bottom:3rem;}
+.block-container{max-width:1380px;padding-top:.55rem;padding-bottom:3rem;}
+
+/* Streamlit 系統頂部列：移除白色背景與多餘留白 */
+header[data-testid="stHeader"]{
+    background:transparent !important;
+    height:0 !important;
+}
+[data-testid="stToolbar"]{
+    visibility:hidden !important;
+    height:0 !important;
+}
+[data-testid="stDecoration"]{display:none !important;}
+#MainMenu{visibility:hidden !important;}
+footer{visibility:hidden !important;}
+.stApp > header{background:transparent !important;}
+
 [data-testid="stSidebar"]{background:#071321;border-right:1px solid #1d3148;}
 [data-testid="stSidebar"] *{color:#F4F7FB;}
 
