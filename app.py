@@ -346,6 +346,53 @@ div[data-testid="stForm"]{
     }
 }
 
+
+/* ===== V4.8 主畫面搜尋 ===== */
+.search-title-box{
+    margin-top:14px;
+    margin-bottom:6px;
+}
+.search-main-title{
+    color:#F3D36C;
+    font-size:24px;
+    font-weight:950;
+}
+div[data-testid="stForm"]{
+    position:relative !important;
+    top:auto !important;
+    z-index:auto !important;
+    background:linear-gradient(145deg,#081827,#06121F) !important;
+    border:1px solid rgba(221,183,68,.72) !important;
+    border-radius:15px !important;
+    padding:12px !important;
+    margin:0 0 18px 0 !important;
+}
+div[data-baseweb="input"] > div{
+    background:#071522 !important;
+    border:1px solid #D9B84E !important;
+}
+div[data-baseweb="input"] input{
+    color:#FFFFFF !important;
+    -webkit-text-fill-color:#FFFFFF !important;
+    font-size:16px !important;
+}
+div[data-baseweb="input"] input::placeholder{
+    color:#AFC0D0 !important;
+    opacity:1 !important;
+}
+@media (max-width:768px){
+    .hero{margin-bottom:8px !important;}
+    .search-main-title{font-size:21px !important;}
+    div[data-testid="stForm"]{
+        position:relative !important;
+        top:auto !important;
+        width:100% !important;
+    }
+    div[data-testid="stForm"] [data-testid="stHorizontalBlock"]{
+        flex-direction:column !important;
+    }
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -498,60 +545,61 @@ st.markdown(f"""
 </div>
 """,unsafe_allow_html=True)
 
-with st.sidebar:
-    st.markdown("## 股票搜尋")
-    q=st.text_input("輸入股票代號或名稱",value="",placeholder="例如：6213、聯茂、台積電",key="sidebar_stock")
-    own=st.selectbox("持股狀態",["尚未持有","已持有"],key="sidebar_own")
-    cost=st.number_input("持有成本",min_value=0.0,value=0.0,step=0.5,disabled=own=="尚未持有",key="sidebar_cost")
-    shares=st.number_input("持有股數",min_value=0,value=0,step=100,disabled=own=="尚未持有",key="sidebar_shares")
-    try:
-        token = st.secrets.get("FINMIND_TOKEN", "")
-    except Exception:
-        token = ""
-    run=st.button("開始分析",use_container_width=True)
 
-# 將最後一次分析保留在 session，手機側欄收起後結果不會消失
-if run:
-    if q.strip():
-        st.session_state["active_stock"] = q.strip()
-        st.session_state["active_own"] = own
-        st.session_state["active_cost"] = cost
-        st.session_state["active_shares"] = shares
+# ===== V4.8：搜尋框固定放在主畫面，手機／電腦都直接可用 =====
+try:
+    token = st.secrets.get("FINMIND_TOKEN", "")
+except Exception:
+    token = ""
+
+# 持股設定保留在側欄，但搜尋不再依賴側欄
+with st.sidebar:
+    st.markdown("## 持股設定")
+    own = st.selectbox("持股狀態", ["尚未持有","已持有"], key="sidebar_own_v48")
+    cost = st.number_input("持有成本", min_value=0.0, value=0.0, step=0.5,
+                           disabled=own=="尚未持有", key="sidebar_cost_v48")
+    shares = st.number_input("持有股數", min_value=0, value=0, step=100,
+                             disabled=own=="尚未持有", key="sidebar_shares_v48")
+
+st.markdown("""
+<div class="search-title-box">
+  <div class="kicker">STOCK SEARCH</div>
+  <div class="search-main-title">股票搜尋</div>
+</div>
+""", unsafe_allow_html=True)
+
+with st.form("main_stock_search", clear_on_submit=False):
+    search_q = st.text_input(
+        "輸入股票代號或名稱",
+        value="",
+        placeholder="例如：2330、台積電、6213、聯茂",
+        key="main_stock_query_v48"
+    )
+    search_run = st.form_submit_button("開始分析", use_container_width=True)
+
+if search_run:
+    if search_q.strip():
+        st.session_state["active_stock_v48"] = search_q.strip()
+        st.session_state["active_own_v48"] = own
+        st.session_state["active_cost_v48"] = cost
+        st.session_state["active_shares_v48"] = shares
     else:
         st.warning("請先輸入股票代號或名稱。")
 
-if "active_stock" not in st.session_state:
+if "active_stock_v48" not in st.session_state:
     st.markdown("""
     <div class="panel">
       <div class="kicker">QUICK DECISION</div>
-      <div class="action-title">搜尋一檔股票，先看短線總結</div>
-      <div class="action-sub">手機與電腦都可直接搜尋股票；分析後可在結果頁上方快速更換股票。</div>
+      <div class="action-title">輸入股票代號或名稱後，按「開始分析」</div>
+      <div class="action-sub">搜尋框固定在主畫面，不需要開啟側邊欄；手機與電腦使用方式相同。</div>
     </div>
-    """,unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
     st.stop()
 
-# 手機友善：結果頁最上方永遠保留「快速重新搜尋」
-with st.form("mobile_quick_search", clear_on_submit=False):
-    c1, c2 = st.columns([4,1])
-    with c1:
-        quick_q = st.text_input(
-            "快速重新搜尋",
-            value="",
-            placeholder="輸入股票代號或名稱，例如：2330、台積電",
-            key="quick_stock"
-        )
-    with c2:
-        st.markdown("<div style='height:28px'></div>", unsafe_allow_html=True)
-        quick_run = st.form_submit_button("搜尋", use_container_width=True)
-
-if quick_run and quick_q.strip():
-    st.session_state["active_stock"] = quick_q.strip()
-    st.rerun()
-
-q = st.session_state["active_stock"]
-own = st.session_state.get("active_own", "尚未持有")
-cost = st.session_state.get("active_cost", 0.0)
-shares = st.session_state.get("active_shares", 0)
+q = st.session_state["active_stock_v48"]
+own = st.session_state.get("active_own_v48", own)
+cost = st.session_state.get("active_cost_v48", cost)
+shares = st.session_state.get("active_shares_v48", shares)
 
 sid,name=resolve_stock(q)
 if not sid:
