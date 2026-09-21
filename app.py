@@ -825,7 +825,7 @@ def attack_status(short, close, support, resistance, vol_ratio, inst_score=50):
         reason="短線趨勢、價格突破、量能與籌碼中至少三項同步確認。"
     elif short>=62 and confirmations>=2:
         label="🟡 模型訊號：等待買進"
-        reason="方向偏強，但確認條件尚未完整；等待突破或拉回止穩。"
+        reason="方向偏強，但模型條件成立機率尚未完整；等待突破或拉回止穩。"
     elif short>=42:
         label="⚪ 模型訊號：觀望"
         reason="多空訊號尚未形成明顯優勢。"
@@ -1109,15 +1109,15 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V7.2 百億全機率決策
+    AI ACTION CENTER｜V7.3 百億全機率決策
     </div>
   <div class="decision-grid">
     <div>
       <div class="decision-status">{status}</div>
       <div class="decision-note">{status_reason}</div>
-      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜確認條件 {confirmations/4*100:.0f}%</div>
+      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜模型條件成立機率 {confirmations/4*100:.0f}%</div>
     </div>
-    <div class="decision-score">{short}<span style="font-size:18px;color:#9db2c8"> / 100</span></div>
+    <div class="decision-score">{short:.0f}%<span style="font-size:15px;color:#9db2c8"> 上漲機率</span></div>
   </div>
   <div class="level-grid">
     <div class="levelbox"><div class="small">突破確認價</div><div class="level">{breakout:.2f}</div><div class="small">突破且量能同步增強，再重新確認進攻訊號</div></div>
@@ -1144,7 +1144,7 @@ for col,title,score,period in zip([c1,c2,c3],["短線","中線","長線"],[short
     with col:
         st.markdown(f"""<div class="panel"><div class="kicker">{period}</div>
         <div style="font-size:24px;font-weight:900">{ico} {title}｜{lab}</div>
-        <div class="gold" style="font-size:25px;font-weight:900">{score:.0f}%</div></div>""",unsafe_allow_html=True)
+        <div class="gold" style="font-size:25px;font-weight:900">上漲機率 {score:.0f}%</div></div>""",unsafe_allow_html=True)
 
 st.markdown("### 關鍵價位")
 a,b,c,e=st.columns(4)
@@ -1174,7 +1174,7 @@ for col,(title,score) in zip(mc,models):
     lab,ico=trend_label(score)
     with col:
         st.markdown(f"""<div class="panel"><div class="kicker">{title}</div>
-        <div style="font-size:25px;font-weight:900">{score:.0f}%</div>
+        <div style="font-size:25px;font-weight:900">上漲機率 {score:.0f}%</div>
         <div>{ico} {lab}</div></div>""",unsafe_allow_html=True)
 
 st.markdown("""
