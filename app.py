@@ -1133,15 +1133,22 @@ _v7_completeness = _v8_complete
 dt_score = int(max(0,min(100, dt_score + _v7_event["score"]*0.45)))
 _v7_up_prob = calibrated_probability_proxy(dt_score, _v7_event["score"], _v7_completeness)
 _v7_down_prob = round(100-_v7_up_prob,1)
+# V8.2：所有 UI 會用到的機率文字先初始化，避免先顯示後定義造成 NameError。
+_v8_day_up_txt=f"{_v7_up_prob:.1f}%" if _v8_prob_ok else "資料不足"
+_v8_day_down_txt=f"{_v7_down_prob:.1f}%" if _v8_prob_ok else "—"
+
+# 波段值在稍後正式計算；先給安全預設，避免任何前段 UI 引用失敗。
+_v8_swing_up_txt="資料不足"
+_v8_swing_down_txt="—"
+
 
 # 波段機率代理值：以現有波段/短線上漲機率 + 法人 + 事件層建立 beta 值
 _v7_swing_base = max(0,min(100, short*0.55 + mid*0.25 + inst_score*0.20))
 _v7_swing_up = calibrated_probability_proxy(_v7_swing_base, _v7_event["score"]*0.7, _v7_completeness)
 _v7_swing_down = round(100-_v7_swing_up,1)
-_v8_day_up_txt=f"{_v8_day_up_txt}" if _v8_prob_ok else "資料不足"
-_v8_day_down_txt=f"{_v8_day_down_txt}" if _v8_prob_ok else "—"
-_v8_swing_up_txt=f"{_v8_swing_up_txt}" if _v8_prob_ok else "資料不足"
-_v8_swing_down_txt=f"{_v8_swing_down_txt}" if _v8_prob_ok else "—"
+_v8_swing_up_txt=f"{_v7_swing_up:.1f}%" if _v8_prob_ok else "資料不足"
+_v8_swing_down_txt=f"{_v7_swing_down:.1f}%" if _v8_prob_ok else "—"
+
 
 
 heat=int(np.clip(50+(12 if abs(chg)>2 else 0)+(12 if vol_ratio>=1.2 else 0),0,100))
