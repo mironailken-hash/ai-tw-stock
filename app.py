@@ -1035,8 +1035,11 @@ _v7_news = global_event_news(sid, name)
 _v7_event = event_impact_for_stock(_v7_news, sid, name)
 _v8_pc = taifex_pc_ratio()
 _v8_tx = taifex_foreign_tx()
-_v8_margin = margin_finmind(sid, TOKEN)
-_v8_lending = lending_finmind(sid, TOKEN)
+# TOKEN 在原程式後段才初始化，因此此處直接安全讀取 Streamlit Secrets。
+# 若沒有設定 FINMIND_TOKEN，函式仍會以公開/免 Token 模式嘗試取得資料。
+_v8_token = st.secrets.get("FINMIND_TOKEN", "")
+_v8_margin = margin_finmind(sid, _v8_token)
+_v8_lending = lending_finmind(sid, _v8_token)
 
 if not sid:
     st.error("找不到股票名稱。請改輸入股票代號，例如 6213。")
