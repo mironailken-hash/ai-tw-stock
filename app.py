@@ -17,8 +17,11 @@ st.markdown("""
 <style>
 .stApp{
     background:
-      radial-gradient(circle at 88% 2%, rgba(212,175,55,.10), transparent 24%),
-      linear-gradient(135deg,#06101c 0%,#091827 52%,#07111e 100%);
+      radial-gradient(circle at 78% -8%,rgba(31,105,162,.22),transparent 30%),
+      radial-gradient(circle at 10% 12%,rgba(218,180,70,.09),transparent 22%),
+      repeating-linear-gradient(90deg,rgba(255,255,255,.018) 0,rgba(255,255,255,.018) 1px,transparent 1px,transparent 74px),
+      repeating-linear-gradient(0deg,rgba(255,255,255,.014) 0,rgba(255,255,255,.014) 1px,transparent 1px,transparent 74px),
+      linear-gradient(135deg,#030914 0%,#071523 46%,#040b15 100%);
     color:#F4F7FB;
 }
 .block-container{max-width:1380px;padding-top:1.1rem;padding-bottom:3rem;}
@@ -26,10 +29,13 @@ st.markdown("""
 [data-testid="stSidebar"] *{color:#F4F7FB;}
 
 .hero{
-    background:linear-gradient(110deg,rgba(13,30,50,.98),rgba(8,18,31,.98));
-    border:1px solid rgba(213,178,75,.38);
-    border-radius:20px;padding:24px 28px;margin-bottom:18px;
-    box-shadow:0 14px 40px rgba(0,0,0,.28);
+    position:relative;overflow:hidden;
+    background:
+      radial-gradient(circle at 88% 25%,rgba(231,194,87,.17),transparent 18%),
+      linear-gradient(110deg,rgba(12,31,51,.99),rgba(5,14,25,.99));
+    border:1px solid rgba(223,188,86,.40);
+    border-radius:22px;padding:25px 30px;margin-bottom:16px;
+    box-shadow:0 22px 65px rgba(0,0,0,.38), inset 0 1px 0 rgba(255,255,255,.05);
 }
 .hero-title{font-size:34px;font-weight:900;letter-spacing:.5px;color:#fff;}
 .hero-sub{color:#9db5ce;margin-top:4px;font-size:14px;}
@@ -46,6 +52,21 @@ st.markdown("""
 .kicker{font-size:12px;color:#7f9ab7;letter-spacing:1.2px;font-weight:700;}
 .level{font-size:22px;font-weight:850;color:#fff;}
 .small{color:#94a9bf;font-size:13px;}
+.decision{
+    background:linear-gradient(115deg,rgba(13,35,57,.99),rgba(6,18,31,.99));
+    border:1px solid rgba(223,188,86,.44);border-radius:20px;padding:22px 25px;
+    box-shadow:0 18px 50px rgba(0,0,0,.32);margin:7px 0 16px;
+}
+.decision-grid{display:grid;grid-template-columns:1.45fr .55fr;gap:18px;align-items:center}
+.decision-status{font-size:36px;font-weight:950;line-height:1.12;color:#fff}
+.decision-score{text-align:right;font-size:42px;font-weight:950;color:#E9C65C}
+.decision-note{font-size:16px;color:#c8d5e3;margin-top:8px}
+.level-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:17px}
+.levelbox{background:rgba(3,12,22,.55);border:1px solid #263d56;border-radius:13px;padding:13px}
+@media(max-width:800px){
+ .decision-grid{grid-template-columns:1fr}.decision-score{text-align:left}
+ .level-grid{grid-template-columns:1fr}.hero-title{font-size:27px}.decision-status{font-size:29px}
+}
 
 div[data-testid="stTextInput"] input,
 div[data-testid="stNumberInput"] input{
@@ -271,20 +292,35 @@ m2.metric("短線強度",f"{short}/100")
 m3.metric("量能比",f"{vol_ratio:.2f}x")
 m4.metric("AI 綜合訊號",f"{overall}/100")
 
+# 首屏決策卡：先回答「現在是否具備短線進攻條件」
+if short >= 78 and close >= resistance and vol_ratio >= 1.2:
+    verdict = "目前具備短線進攻條件"
+    verdict_note = "突破、量能與短線模型同時達標；仍需留意跌回突破區後的失效風險。"
+elif short >= 65:
+    verdict = "目前偏強，但先等突破確認"
+    verdict_note = "方向偏多，但尚未同時滿足突破與量能確認，不把『偏多』直接當成已成立的進攻訊號。"
+elif short >= 42:
+    verdict = "目前不適合進攻，先觀望"
+    verdict_note = "短線訊號尚未形成一致優勢；等待突破或拉回止穩後再重新判讀。"
+else:
+    verdict = "目前不適合進攻"
+    verdict_note = "短線結構偏弱，優先等待趨勢修復，而不是追價。"
+
 st.markdown(f"""
-<div class="panel">
-  <div class="kicker">SHORT-TERM ACTION｜短線作戰總結</div>
-  <div class="action-title">{status}</div>
-  <div class="action-sub">{status_reason}</div>
-  <hr>
-  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px">
-    <div><div class="small">突破觀察價</div><div class="level">{breakout:.2f}</div></div>
-    <div><div class="small">拉回觀察區</div><div class="level">{pull_lo:.2f} ～ {pull_hi:.2f}</div></div>
-    <div><div class="small">轉弱警戒</div><div class="level">{weak:.2f}</div></div>
+<div class="decision">
+  <div class="kicker">AI ACTION CENTER｜短線決策中心</div>
+  <div class="decision-grid">
+    <div>
+      <div class="decision-status">{verdict}</div>
+      <div class="decision-note">{verdict_note}</div>
+    </div>
+    <div class="decision-score">{short}<span style="font-size:18px;color:#9db2c8"> / 100</span></div>
   </div>
-  <hr>
-  <b>訊號升級條件：</b>突破觀察價，且成交量明顯高於近期均量、技術結構未轉弱時，短線訊號可升級。<br>
-  <b>失效條件：</b>跌破轉弱警戒價，應重新評估目前短線結構。
+  <div class="level-grid">
+    <div class="levelbox"><div class="small">突破確認價</div><div class="level">{breakout:.2f}</div><div class="small">突破且量能同步增強，再重新確認進攻訊號</div></div>
+    <div class="levelbox"><div class="small">拉回觀察區</div><div class="level">{pull_lo:.2f} ～ {pull_hi:.2f}</div><div class="small">回測止穩且技術轉強，可形成另一種轉強劇本</div></div>
+    <div class="levelbox"><div class="small">轉弱警戒</div><div class="level">{weak:.2f}</div><div class="small">跌破後目前短線劇本失效，重新評估</div></div>
+  </div>
 </div>
 """,unsafe_allow_html=True)
 
