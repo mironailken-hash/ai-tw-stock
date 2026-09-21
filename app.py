@@ -854,7 +854,7 @@ st.markdown(f"""
   <div style="max-width:680px">
     <div class="kicker">TAIWAN EQUITY INTELLIGENCE TERMINAL</div>
     <div class="hero-title"><span class="gold">KEN AI 百億</span>台股智慧決策系統</div>
-    <div class="hero-sub" style="font-size:16px;margin-top:10px">市場訊號 × 法人籌碼 × 趨勢結構 × 風險驗證</div>
+    <div class="hero-sub" style="font-size:16px;margin-top:10px">市場訊號 × 法人偏多機率 × 趨勢結構 × 風險驗證</div>
     <div style="margin-top:18px;color:#e8d18b;font-weight:800">用條件確認趨勢，不用情緒猜行情</div>
   </div>
 </div>
@@ -1030,9 +1030,9 @@ overall_label,overall_icon=trend_label(overall)
 st.markdown(f"## {sid} {name or q}")
 m1,m2,m3,m4=st.columns(4)
 m1.metric("最新價格",f"{close:.2f}",f"{chg:+.2f}%")
-m2.metric("短線強度",f"{short:.0f}%")
+m2.metric("短線強度",f"上漲機率 {short:.0f}%")
 m3.metric("量能比",f"{vol_ratio:.2f}x")
-m4.metric("AI 綜合訊號",f"{overall}/100")
+m4.metric("AI 綜合訊號",f"{overall:.0f}%")
 
 # 首屏決策卡：先回答「現在是否具備短線進攻條件」
 if short >= 78 and close >= resistance and vol_ratio >= 1.2:
@@ -1076,8 +1076,8 @@ st.markdown(f"""
 
 st.markdown("""
 <div class="v7-prob-legend">
-<b>機率顯示說明：</b> AI 判斷數值統一以「預估機率 %」呈現；
-股價、實際漲跌幅、成交量、支撐／壓力仍維持原始市場單位。
+<b>機率顯示說明：</b> 本頁不再顯示「分數／100」。
+所有 AI 判斷數值統一顯示為「預估機率 %」；股價、實際漲跌幅、成交量、支撐／壓力仍維持市場原始單位。
 </div>
 """, unsafe_allow_html=True)
 
@@ -1109,7 +1109,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V7 百億超級機率決策
+    AI ACTION CENTER｜V7.2 百億全機率決策
     </div>
   <div class="decision-grid">
     <div>
@@ -1130,7 +1130,7 @@ st.markdown(f"""
 st.markdown(f"""
 <div class="panel">
 <div class="kicker">FINAL SUMMARY｜市場總結</div>
-<div style="font-size:25px;font-weight:900">{overall_icon} {overall_label}｜AI 訊號 {overall}/100</div>
+<div style="font-size:25px;font-weight:900">{overall_icon} {overall_label}｜AI 上漲機率 {overall:.0f}%</div>
 <div class="action-sub">短線目前為「{status.replace("🚀 ","").replace("🟢 ","").replace("🟡 ","").replace("⚠️ ","").replace("🔴 ","")}」。
 重點不是預測哪一天一定上漲，而是等待價格、量能與技術條件觸發後再更新訊號。</div>
 </div>
@@ -1144,7 +1144,7 @@ for col,title,score,period in zip([c1,c2,c3],["短線","中線","長線"],[short
     with col:
         st.markdown(f"""<div class="panel"><div class="kicker">{period}</div>
         <div style="font-size:24px;font-weight:900">{ico} {title}｜{lab}</div>
-        <div class="gold" style="font-size:25px;font-weight:900">{score}/100</div></div>""",unsafe_allow_html=True)
+        <div class="gold" style="font-size:25px;font-weight:900">{score:.0f}%</div></div>""",unsafe_allow_html=True)
 
 st.markdown("### 關鍵價位")
 a,b,c,e=st.columns(4)
@@ -1166,15 +1166,15 @@ if own=="已持有" and cost>0:
 st.markdown("### AI 模型面板")
 st.markdown(f"""<div class="panel">
 <div class="kicker">MODEL CONSENSUS</div>
-<div style="font-size:26px;font-weight:900">{overall_icon} AI 綜合判斷：{overall}/100｜{overall_label}</div>
+<div style="font-size:26px;font-weight:900">{overall_icon} AI 綜合上漲機率：{overall:.0f}%｜{overall_label}</div>
 </div>""",unsafe_allow_html=True)
-models=[("技術模型",tech),("法人籌碼",inst_score),("市場熱度",heat),("風險防守",100-risk)]
+models=[("技術面上漲機率",tech),("法人偏多機率",inst_score),("市場偏多機率",heat),("風險發生機率",100-risk)]
 mc=st.columns(4)
 for col,(title,score) in zip(mc,models):
     lab,ico=trend_label(score)
     with col:
         st.markdown(f"""<div class="panel"><div class="kicker">{title}</div>
-        <div style="font-size:25px;font-weight:900">{score}/100</div>
+        <div style="font-size:25px;font-weight:900">{score:.0f}%</div>
         <div>{ico} {lab}</div></div>""",unsafe_allow_html=True)
 
 st.markdown("""
@@ -1214,7 +1214,7 @@ st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 st.markdown("""
 <div class="section-pro">
-  <div class="section-pro-title">▥ 法人籌碼</div>
+  <div class="section-pro-title">▥ 法人偏多機率</div>
   <div class="section-pro-sub">外資・投信・自營商｜觀察近期資金方向</div>
 </div>
 """, unsafe_allow_html=True)
