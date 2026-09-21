@@ -17,8 +17,9 @@ st.markdown("""
 <style>
 .stApp{
     background:
-      radial-gradient(circle at 78% -8%,rgba(31,105,162,.22),transparent 30%),
-      radial-gradient(circle at 10% 12%,rgba(218,180,70,.09),transparent 22%),
+      radial-gradient(circle at 82% -5%,rgba(25,118,190,.25),transparent 28%),
+      radial-gradient(circle at 13% 9%,rgba(229,190,72,.12),transparent 20%),
+      radial-gradient(circle at 50% 110%,rgba(12,78,120,.15),transparent 34%),
       repeating-linear-gradient(90deg,rgba(255,255,255,.018) 0,rgba(255,255,255,.018) 1px,transparent 1px,transparent 74px),
       repeating-linear-gradient(0deg,rgba(255,255,255,.014) 0,rgba(255,255,255,.014) 1px,transparent 1px,transparent 74px),
       linear-gradient(135deg,#030914 0%,#071523 46%,#040b15 100%);
@@ -180,6 +181,23 @@ def trend_label(s):
     if s>=25:return "偏空","🔴"
     return "強勢偏空","🔴"
 
+def zh_institution_name(x):
+    """FinMind 常見法人名稱轉繁體中文顯示。"""
+    s=str(x)
+    pairs={
+        "Foreign_Investor":"外資",
+        "Foreign_Dealer_Self":"外資自營商",
+        "Investment_Trust":"投信",
+        "Dealer_self":"自營商（自行買賣）",
+        "Dealer_Hedging":"自營商（避險）",
+        "Dealer":"自營商",
+        "Foreign Investor":"外資",
+        "Investment Trust":"投信",
+        "Dealer self":"自營商（自行買賣）",
+        "Dealer Hedging":"自營商（避險）",
+    }
+    return pairs.get(s,s)
+
 def institutional_score(inst):
     if inst.empty:return 50,0
     buy=[c for c in inst.columns if "buy" in c.lower()]
@@ -217,8 +235,8 @@ def attack_status(short, close, support, resistance, vol_ratio):
 # =========================
 st.markdown("""
 <div class="hero">
-  <div class="hero-title">財神．金策 <span class="gold">KEN AI</span> 台股智慧分析</div>
-  <div class="hero-sub">TAIWAN EQUITY INTELLIGENCE TERMINAL　｜　簡潔、明確、可追蹤的市場訊號</div>
+  <div class="hero-title"><span class="gold">KEN AI</span> 台股智慧決策中心</div>
+  <div class="hero-sub">TAIWAN EQUITY INTELLIGENCE TERMINAL　｜　市場訊號・法人籌碼・趨勢決策</div>
 </div>
 """,unsafe_allow_html=True)
 
@@ -348,45 +366,54 @@ if own=="已持有" and cost>0:
     c.metric("估算損益",f"{(close-cost)*shares:+,.0f} 元")
 
 # =========================
-# 詳細資訊收起來
+# 專業資訊總覽（全部攤開，不使用下拉展開）
 # =========================
-with st.expander("查看 AI 模型面板與分析原因"):
-    st.markdown(f"### {overall_icon} AI 綜合判斷：{overall}/100｜{overall_label}")
-    models=[
-        ("技術模型",tech),
-        ("法人籌碼",inst_score),
-        ("市場熱度",heat),
-        ("風險壓力",100-risk)
-    ]
-    for title,score in models:
-        lab,ico=trend_label(score)
-        st.write(f"**{title}**　{score}/100　{ico} {lab}")
-        st.progress(score/100)
-    st.caption("基本面、新聞情緒與國際市場若尚未接入可靠結構化資料，不會用猜測製造分數。")
+st.markdown("### AI 模型面板")
+st.markdown(f"""<div class="panel">
+<div class="kicker">MODEL CONSENSUS</div>
+<div style="font-size:26px;font-weight:900">{overall_icon} AI 綜合判斷：{overall}/100｜{overall_label}</div>
+</div>""",unsafe_allow_html=True)
+models=[("技術模型",tech),("法人籌碼",inst_score),("市場熱度",heat),("風險防守",100-risk)]
+mc=st.columns(4)
+for col,(title,score) in zip(mc,models):
+    lab,ico=trend_label(score)
+    with col:
+        st.markdown(f"""<div class="panel"><div class="kicker">{title}</div>
+        <div style="font-size:25px;font-weight:900">{score}/100</div>
+        <div>{ico} {lab}</div></div>""",unsafe_allow_html=True)
 
-with st.expander("查看價格與均線"):
-    st.line_chart(d.set_index("date")[["close","MA5","MA20","MA60"]].tail(120),use_container_width=True)
+st.markdown("### 價格趨勢")
+st.line_chart(d.set_index("date")[["close","MA5","MA20","MA60"]].tail(120),use_container_width=True)
 
-with st.expander("查看法人籌碼"):
-    st.write(f"近 5 日法人代理淨額：**{inst_net:,.0f}**")
-    if not inst.empty:
-        cols=[x for x in ["date","name","buy","sell"] if x in inst.columns]
-        st.dataframe(inst[cols].tail(20) if cols else inst.tail(20),use_container_width=True,hide_index=True)
+st.markdown("### 法人籌碼")
+st.markdown(f"""<div class="panel"><div class="kicker">INSTITUTIONAL FLOW</div>
+<div style="font-size:23px;font-weight:900">近 5 日法人代理淨額：{inst_net:,.0f}</div></div>""",unsafe_allow_html=True)
+if not inst.empty:
+    inst_show=inst.copy()
+    if "name" in inst_show.columns:
+        inst_show["name"]=inst_show["name"].map(zh_institution_name)
+        inst_show=inst_show.rename(columns={"name":"法人名稱"})
+    inst_show=inst_show.rename(columns={"date":"日期","buy":"買進","sell":"賣出"})
+    wanted=[x for x in ["日期","法人名稱","買進","賣出"] if x in inst_show.columns]
+    st.dataframe(inst_show[wanted].tail(20) if wanted else inst_show.tail(20),
+                 use_container_width=True,hide_index=True)
 
-with st.expander("查看新聞／錢線百分百／股市爆料同學會"):
-    st.markdown("#### 公開新聞")
-    news=rss(f"{sid} {name} 台股",6)
-    if news:
-        for n in news: st.markdown(f"- [{n['title']}]({n['link']})")
-    else: st.caption("目前未取得相關公開新聞索引。")
+st.markdown("### 公開市場情報")
+news=rss(f"{sid} {name} 台股",6)
+if news:
+    for n in news: st.markdown(f"- [{n['title']}]({n['link']})")
+else:
+    st.caption("目前未取得相關公開新聞索引。")
 
-    st.markdown("#### 錢線百分百相關公開索引")
+n1,n2=st.columns(2)
+with n1:
+    st.markdown("#### 錢線百分百相關索引")
     tv=rss(f'"錢線百分百" {sid} {name}',4)
     if tv:
         for n in tv: st.markdown(f"- [{n['title']}]({n['link']})")
     else: st.caption("目前沒有近期相關公開索引。")
-
-    st.markdown("#### 股市爆料同學會相關公開索引")
+with n2:
+    st.markdown("#### 股市爆料同學會相關索引")
     forum=rss(f'"股市爆料同學會" {sid} {name}',4)
     if forum:
         for n in forum: st.markdown(f"- [{n['title']}]({n['link']})")
