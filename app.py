@@ -123,6 +123,56 @@ div[data-testid="stSelectbox"] > div > div{
 [data-testid="stMetricValue"]{color:#fff;}
 details{background:#091725;border:1px solid #20354d;border-radius:14px;padding:5px 12px;}
 hr{border-color:#20354d;}
+
+/* ===== V4.4 深色金融資訊區 ===== */
+.section-pro{
+    background:
+      radial-gradient(circle at 92% 0%,rgba(31,113,170,.12),transparent 28%),
+      linear-gradient(145deg,rgba(8,26,43,.98),rgba(4,15,27,.98));
+    border:1px solid rgba(221,183,68,.72);
+    border-radius:18px;
+    padding:16px 20px 12px 20px;
+    margin:20px 0 8px 0;
+    box-shadow:0 14px 35px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.025);
+}
+.section-pro-title{
+    color:#F1CB5C;
+    font-size:24px;
+    font-weight:950;
+    letter-spacing:.4px;
+}
+.section-pro-sub{
+    color:#8FA9C1;
+    font-size:13px;
+    margin-top:3px;
+}
+
+/* 圖表外框與底色 */
+[data-testid="stArrowVegaLiteChart"],
+[data-testid="stVegaLiteChart"],
+[data-testid="stLineChart"]{
+    background:linear-gradient(145deg,#071827,#04111E) !important;
+    border:1px solid #1D3A53 !important;
+    border-radius:16px !important;
+    padding:12px !important;
+    box-shadow:0 12px 30px rgba(0,0,0,.22) !important;
+}
+
+/* Dataframe 外層深色 */
+[data-testid="stDataFrame"],
+[data-testid="stDataFrameResizable"]{
+    background:#061522 !important;
+    border:1px solid #1D3A53 !important;
+    border-radius:16px !important;
+    overflow:hidden !important;
+    box-shadow:0 12px 30px rgba(0,0,0,.22) !important;
+}
+
+/* 避免 Streamlit 元件容器出現突兀白底 */
+[data-testid="stElementContainer"]{
+    background-color:transparent;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -428,10 +478,20 @@ for col,(title,score) in zip(mc,models):
         <div style="font-size:25px;font-weight:900">{score}/100</div>
         <div>{ico} {lab}</div></div>""",unsafe_allow_html=True)
 
-st.markdown("### 價格趨勢")
+st.markdown("""
+<div class="section-pro">
+  <div class="section-pro-title">📈 價格趨勢</div>
+  <div class="section-pro-sub">K線趨勢與均線結構｜掌握價格方向與波動變化</div>
+</div>
+""", unsafe_allow_html=True)
 st.line_chart(d.set_index("date")[["close","MA5","MA20","MA60"]].tail(120),use_container_width=True)
 
-st.markdown("### 法人籌碼")
+st.markdown("""
+<div class="section-pro">
+  <div class="section-pro-title">▥ 法人籌碼</div>
+  <div class="section-pro-sub">外資・投信・自營商｜觀察近期資金方向</div>
+</div>
+""", unsafe_allow_html=True)
 st.markdown(f"""<div class="panel"><div class="kicker">INSTITUTIONAL FLOW</div>
 <div style="font-size:23px;font-weight:900">近 5 日法人代理淨額：{inst_net:,.0f}</div></div>""",unsafe_allow_html=True)
 if not inst.empty:
