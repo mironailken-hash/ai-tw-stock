@@ -661,7 +661,7 @@ hero_bg = (
     if BANNER_B64 else
     "linear-gradient(110deg,#07182a,#020811)"
 )
-st.markdown('<div class="top-signature">投顧大師 謝子鵬・與你攜手第一個百億</div>', unsafe_allow_html=True)
+st.markdown('<div class="top-signature">投顧大師 謝子鵬・與你攜手第一個百億　｜　版權使用：社團法人台灣美業國際交流協會</div>', unsafe_allow_html=True)
 
 st.markdown(f"""
 <div class="hero" style="min-height:235px;background-image:{hero_bg};background-size:cover;background-position:center 27%;display:flex;align-items:center;">
