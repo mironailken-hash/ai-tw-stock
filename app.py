@@ -623,12 +623,6 @@ hero_bg = (
     if BANNER_B64 else
     "linear-gradient(110deg,#07182a,#020811)"
 )
-# V5.1：法人分數完成後再計算最終市場訊號，避免變數尚未建立
-status,status_reason,breakout,pull_lo,pull_hi,weak,confirmations=attack_status(
-    short,close,support,resistance,vol_ratio,inst_score
-)
-
-
 st.markdown(f"""
 <div class="hero" style="min-height:235px;background-image:{hero_bg};background-size:cover;background-position:center 27%;display:flex;align-items:center;">
   <div style="max-width:680px">
@@ -743,6 +737,10 @@ long=score_trend(d,90)
 
 inst=fm("TaiwanStockInstitutionalInvestorsBuySell",sid,today-timedelta(days=35),today,token)
 inst_score,inst_net=institutional_score(inst)
+
+status,status_reason,breakout,pull_lo,pull_hi,weak,confirmations=attack_status(
+    short,close,support,resistance,vol_ratio,inst_score
+)
 
 heat=int(np.clip(50+(12 if abs(chg)>2 else 0)+(12 if vol_ratio>=1.2 else 0),0,100))
 risk=int(np.clip(50+abs(chg)*4+(8 if pd.notna(r["RSI"]) and (r["RSI"]>75 or r["RSI"]<30) else 0),0,100))
