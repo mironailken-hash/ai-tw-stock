@@ -217,6 +217,102 @@ hr{border-color:#20354d;}
 .tw-green{color:#45D483;font-weight:850;}
 .muted{color:#A4B5C5;font-weight:750;}
 
+
+/* ===== V4.6 Mobile Responsive ===== */
+@media (max-width: 768px) {
+  .block-container{
+    max-width:100% !important;
+    padding-left:.65rem !important;
+    padding-right:.65rem !important;
+    padding-top:.35rem !important;
+  }
+
+  /* Sidebar remains usable on mobile */
+  [data-testid="stSidebar"]{
+    min-width:82vw !important;
+    max-width:82vw !important;
+  }
+
+  /* Stack Streamlit columns vertically */
+  [data-testid="stHorizontalBlock"]{
+    flex-direction:column !important;
+    gap:.55rem !important;
+  }
+  [data-testid="column"]{
+    width:100% !important;
+    flex:1 1 100% !important;
+    min-width:100% !important;
+  }
+
+  .hero{
+    min-height:185px !important;
+    padding:20px 16px !important;
+    border-radius:14px !important;
+    background-position:62% center !important;
+  }
+  .hero-title{
+    font-size:28px !important;
+    line-height:1.15 !important;
+    max-width:82% !important;
+  }
+  .hero-sub{
+    font-size:12px !important;
+    line-height:1.5 !important;
+    max-width:78% !important;
+  }
+  .kicker{font-size:10px !important;}
+
+  .panel,
+  .section-pro{
+    padding:14px !important;
+    border-radius:14px !important;
+  }
+  .section-pro-title{font-size:20px !important;}
+
+  /* Avoid giant metric text on small screens */
+  [data-testid="stMetricValue"]{
+    font-size:28px !important;
+  }
+
+  /* Plotly responsive height/width */
+  [data-testid="stPlotlyChart"]{
+    width:100% !important;
+    overflow:hidden !important;
+    padding:4px !important;
+  }
+  [data-testid="stPlotlyChart"] > div{
+    width:100% !important;
+  }
+
+  /* Institutional table can scroll horizontally without breaking page */
+  .inst-table-wrap{
+    width:100% !important;
+    overflow-x:auto !important;
+    -webkit-overflow-scrolling:touch;
+  }
+  .inst-table{
+    min-width:690px !important;
+    font-size:12px !important;
+  }
+  .inst-table th,
+  .inst-table td{
+    padding:9px 10px !important;
+  }
+
+  /* Inputs/buttons larger for touch */
+  .stButton > button{
+    min-height:46px !important;
+    font-size:15px !important;
+  }
+  div[data-baseweb="input"] input{
+    font-size:16px !important;
+  }
+
+  h1{font-size:28px !important;}
+  h2{font-size:24px !important;}
+  h3{font-size:20px !important;}
+}
+
 </style>
 """, unsafe_allow_html=True)
 
