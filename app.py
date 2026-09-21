@@ -438,6 +438,15 @@ div[data-testid="stForm"] button p{
     font-weight:900 !important;
 }
 
+
+.top-signature{
+ width:100%;text-align:right;color:#D8C47A;font-size:11px;
+ letter-spacing:.08em;font-weight:650;opacity:.88;padding:2px 4px 7px;
+}
+@media(max-width:768px){
+ .top-signature{text-align:center;font-size:10px;letter-spacing:.04em;padding-bottom:6px;}
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -652,6 +661,8 @@ hero_bg = (
     if BANNER_B64 else
     "linear-gradient(110deg,#07182a,#020811)"
 )
+st.markdown('<div class="top-signature">投顧大師 謝子鵬・與你攜手第一個百億</div>', unsafe_allow_html=True)
+
 st.markdown(f"""
 <div class="hero" style="min-height:235px;background-image:{hero_bg};background-size:cover;background-position:center 27%;display:flex;align-items:center;">
   <div style="max-width:680px">
