@@ -479,6 +479,13 @@ div[data-testid="stForm"] button p{
 .v7-event-title{font-size:21px;font-weight:900;color:#F2D56B;margin:6px 0;}
 .v7-beta{font-size:14px;font-weight:800;color:#E7EDF3;margin-top:7px;}
 
+
+.v7-prob-legend{
+ background:rgba(221,183,68,.08);border:1px solid rgba(221,183,68,.28);
+ color:#C8D3DD;border-radius:10px;padding:8px 12px;margin:4px 0 10px;
+ font-size:12px;line-height:1.55;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -992,7 +999,7 @@ dt_signal,dt_score,dt_reason,dt_direction,dt_def,dt_res = daytrade_radar(
     close,prev,day_open,day_high,day_low,vol_ratio,short,inst_score,support,resistance
 )
 
-# V7 Beta：重大事件先影響模型分數；資料完整度獨立顯示
+# V7 Beta：重大事件先影響模型上漲機率；資料完整度獨立顯示
 _v7_components = {
     "個股價格": bool(pd.notna(close)),
     "即時行情": bool(rt and pd.notna(rt_price)),
@@ -1006,7 +1013,7 @@ dt_score = int(max(0,min(100, dt_score + _v7_event["score"]*0.45)))
 _v7_up_prob = calibrated_probability_proxy(dt_score, _v7_event["score"], _v7_completeness)
 _v7_down_prob = round(100-_v7_up_prob,1)
 
-# 波段機率代理值：以現有波段/短線分數 + 法人 + 事件層建立 beta 值
+# 波段機率代理值：以現有波段/短線上漲機率 + 法人 + 事件層建立 beta 值
 _v7_swing_base = max(0,min(100, short*0.55 + mid*0.25 + inst_score*0.20))
 _v7_swing_up = calibrated_probability_proxy(_v7_swing_base, _v7_event["score"]*0.7, _v7_completeness)
 _v7_swing_down = round(100-_v7_swing_up,1)
@@ -1023,7 +1030,7 @@ overall_label,overall_icon=trend_label(overall)
 st.markdown(f"## {sid} {name or q}")
 m1,m2,m3,m4=st.columns(4)
 m1.metric("最新價格",f"{close:.2f}",f"{chg:+.2f}%")
-m2.metric("短線強度",f"{short}/100")
+m2.metric("短線強度",f"{short:.0f}%")
 m3.metric("量能比",f"{vol_ratio:.2f}x")
 m4.metric("AI 綜合訊號",f"{overall}/100")
 
@@ -1058,13 +1065,21 @@ st.markdown(f"""
   <div class="v6-live-card">
     <div class="kicker">SUPER DAY TRADE｜百億超級當沖雷達</div>
     <div class="v6-dt">{dt_signal}</div>
-    <div class="v7-prob">13:30前上漲機率代理值 <b>{_v7_up_prob:.1f}%</b>　｜　下跌 <b>{_v7_down_prob:.1f}%</b></div>
+    <div class="v7-prob">13:30前上漲機率 <b>{_v7_up_prob:.1f}%</b>　｜　下跌機率 <b>{_v7_down_prob:.1f}%</b></div>
     <div class="v6-score">方向：{dt_direction}｜資料完整度 {_v7_completeness*100:.0f}%</div>
     <div class="v6-meta">{dt_reason}<br>盤中防守：{dt_def:.2f}｜壓力：{dt_res:.2f}</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
 
+
+
+st.markdown("""
+<div class="v7-prob-legend">
+<b>機率顯示說明：</b> AI 判斷數值統一以「預估機率 %」呈現；
+股價、實際漲跌幅、成交量、支撐／壓力仍維持原始市場單位。
+</div>
+""", unsafe_allow_html=True)
 
 # ===== V7 全球事件情報 =====
 _event_icon = "🚨" if _v7_event["risk"]=="重大事件影響" else ("⚠️" if _v7_event["risk"]=="事件影響中等" else "🌐")
@@ -1074,7 +1089,7 @@ st.markdown(f"""
  <div class="v7-event-title">{_event_icon} {_v7_event["risk"]}</div>
  <div class="v6-meta">已掃描台灣/國際新聞；與個股或重大市場事件相關 {_v7_event["related"]} 則｜
  事件偏多指標 {_v7_event["positive"]}｜偏空指標 {_v7_event["negative"]}</div>
- <div class="v7-beta">波段上漲機率代理值 {_v7_swing_up:.1f}%｜下跌 {_v7_swing_down:.1f}%</div>
+ <div class="v7-beta">未來波段上漲機率 {_v7_swing_up:.1f}%｜下跌機率 {_v7_swing_down:.1f}%</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1094,13 +1109,13 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V7 百億超級決策
+    AI ACTION CENTER｜V7 百億超級機率決策
     </div>
   <div class="decision-grid">
     <div>
       <div class="decision-status">{status}</div>
       <div class="decision-note">{status_reason}</div>
-      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜確認條件 {confirmations}/4</div>
+      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜確認條件 {confirmations/4*100:.0f}%</div>
     </div>
     <div class="decision-score">{short}<span style="font-size:18px;color:#9db2c8"> / 100</span></div>
   </div>
