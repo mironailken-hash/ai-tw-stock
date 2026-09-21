@@ -468,6 +468,17 @@ div[data-testid="stForm"] button p{
  .v6-price{font-size:34px}.v6-dt{font-size:22px}
 }
 
+
+.v7-prob{font-size:16px;color:#F4F6F8;margin:6px 0;}
+.v7-prob b{font-size:23px;color:#F2D56B;}
+.v7-event-card{
+ background:linear-gradient(145deg,#08131f,#0b1c2b);
+ border:1px solid rgba(221,183,68,.48);border-radius:16px;
+ padding:15px 18px;margin:0 0 13px;
+}
+.v7-event-title{font-size:21px;font-weight:900;color:#F2D56B;margin:6px 0;}
+.v7-beta{font-size:14px;font-weight:800;color:#E7EDF3;margin-top:7px;}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -677,6 +688,96 @@ def daytrade_radar(close, prev, day_open, day_high, day_low, vol_ratio,
     intraday_res=min(day_high if day_high else resistance, resistance) if resistance else day_high
     return signal,score,reason,direction,intraday_def,intraday_res
 
+
+def _rss_items(query, n=8):
+    """Google News RSS 公開新聞搜尋。"""
+    import xml.etree.ElementTree as ET
+    from urllib.parse import quote_plus
+    url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+    try:
+        rr = requests.get(url, timeout=8, headers={"User-Agent":"Mozilla/5.0"})
+        rr.raise_for_status()
+        root = ET.fromstring(rr.content)
+        out=[]
+        for item in root.findall(".//item")[:n]:
+            out.append({
+                "title": (item.findtext("title") or "").strip(),
+                "link": (item.findtext("link") or "").strip(),
+                "pubDate": (item.findtext("pubDate") or "").strip(),
+                "source": ((item.find("source").text if item.find("source") is not None else "") or "").strip()
+            })
+        return out
+    except Exception:
+        return []
+
+def global_event_news(sid, name, n=18):
+    """
+    V7 全球事件情報：
+    公司/產業 + 美國總統/Fed/關稅/制裁 + 戰爭/地緣政治。
+    RSS 是公開新聞索引，不把單一標題當成事實本身。
+    """
+    queries = [
+        f'"{name}" OR "{sid}" 台股 重大訊息 財報 營收 法說',
+        f'"{name}" 半導體 AI 供應鏈 關稅 出口管制',
+        '美國總統 發言 關稅 台灣 半導體 晶片',
+        'Federal Reserve Fed 利率 美股 科技股 台灣',
+        '戰爭 衝突 制裁 中東 台海 烏克蘭 油價 股市',
+        'NASDAQ futures semiconductor stocks Taiwan market'
+    ]
+    rows=[]
+    seen=set()
+    for q in queries:
+        for x in _rss_items(q, 5):
+            key=x["title"]
+            if key and key not in seen:
+                seen.add(key); rows.append(x)
+    return rows[:n]
+
+def event_impact_for_stock(news_rows, sid, name):
+    """
+    規則型事件風險層。只根據標題做『風險/關聯』初篩，
+    不把它偽裝成完整 NLP 或確定的事件方向。
+    """
+    if not news_rows:
+        return {"score":0, "risk":"資料不足", "related":0, "negative":0, "positive":0, "items":[]}
+
+    high_kw = ["戰爭","開戰","攻擊","空襲","飛彈","制裁","關稅","出口管制","禁令",
+               "Fed","聯準會","利率","美國總統","Trump","川普","台海","地震","停工"]
+    neg_kw = ["下跌","重挫","暴跌","制裁","禁令","限制","戰爭","攻擊","停工","下修",
+              "衰退","虧損","裁員","調降","關稅"]
+    pos_kw = ["上漲","大漲","創高","上修","成長","獲利","訂單","擴產","降息","突破"]
+
+    related=[]
+    neg=pos=0
+    for x in news_rows:
+        t=x["title"]
+        relevance = 2 if (name in t or sid in t) else (1 if any(k.lower() in t.lower() for k in high_kw) else 0)
+        if relevance:
+            nn=sum(1 for k in neg_kw if k.lower() in t.lower())
+            pp=sum(1 for k in pos_kw if k.lower() in t.lower())
+            neg += nn*relevance
+            pos += pp*relevance
+            xx=dict(x); xx["relevance"]=relevance; xx["tone"]="偏空" if nn>pp else ("偏多" if pp>nn else "中性/待確認")
+            related.append(xx)
+
+    raw=pos-neg
+    if abs(raw)>=8: risk="重大事件影響"
+    elif abs(raw)>=3: risk="事件影響中等"
+    else: risk="事件影響有限/中性"
+    return {"score":max(-20,min(20,raw)), "risk":risk, "related":len(related),
+            "negative":neg, "positive":pos, "items":related[:8]}
+
+def calibrated_probability_proxy(base_score, event_score=0, completeness=1.0):
+    """
+    V7 beta：暫用『機率代理值』，不是已完成歷史校準的真實勝率。
+    等累積回測樣本後才應改標正式『上漲機率』。
+    """
+    x=(base_score-50)/11.5 + event_score/14
+    p=1/(1+np.exp(-x))
+    # 資料不完整時往 50% 收斂
+    p=.5 + (p-.5)*max(.25,min(1.0,completeness))
+    return round(p*100,1)
+
 def broker_research(sid, name, n=8):
     """只搜尋公開券商/投顧研究索引，不把一般新聞雜訊混入模型。"""
     domains=[
@@ -821,6 +922,10 @@ if _market_open:
     st.markdown('<meta http-equiv="refresh" content="8">', unsafe_allow_html=True)
 
 sid,name=resolve_stock(q)
+
+# V7：搜尋個股 + 台灣 + 國際重大事件新聞
+_v7_news = global_event_news(sid, name)
+_v7_event = event_impact_for_stock(_v7_news, sid, name)
 if not sid:
     st.error("找不到股票名稱。請改輸入股票代號，例如 6213。")
     st.stop()
@@ -887,6 +992,25 @@ dt_signal,dt_score,dt_reason,dt_direction,dt_def,dt_res = daytrade_radar(
     close,prev,day_open,day_high,day_low,vol_ratio,short,inst_score,support,resistance
 )
 
+# V7 Beta：重大事件先影響模型分數；資料完整度獨立顯示
+_v7_components = {
+    "個股價格": bool(pd.notna(close)),
+    "即時行情": bool(rt and pd.notna(rt_price)),
+    "技術面": True,
+    "法人": bool(inst is not None and len(inst)>0),
+    "全球事件新聞": bool(len(_v7_news)>0),
+    "券商公開研究": True
+}
+_v7_completeness = sum(_v7_components.values())/len(_v7_components)
+dt_score = int(max(0,min(100, dt_score + _v7_event["score"]*0.45)))
+_v7_up_prob = calibrated_probability_proxy(dt_score, _v7_event["score"], _v7_completeness)
+_v7_down_prob = round(100-_v7_up_prob,1)
+
+# 波段機率代理值：以現有波段/短線分數 + 法人 + 事件層建立 beta 值
+_v7_swing_base = max(0,min(100, short*0.55 + mid*0.25 + inst_score*0.20))
+_v7_swing_up = calibrated_probability_proxy(_v7_swing_base, _v7_event["score"]*0.7, _v7_completeness)
+_v7_swing_down = round(100-_v7_swing_up,1)
+
 heat=int(np.clip(50+(12 if abs(chg)>2 else 0)+(12 if vol_ratio>=1.2 else 0),0,100))
 risk=int(np.clip(50+abs(chg)*4+(8 if pd.notna(r["RSI"]) and (r["RSI"]>75 or r["RSI"]<30) else 0),0,100))
 tech=int(round(short*.5+mid*.3+long*.2))
@@ -932,20 +1056,45 @@ st.markdown(f"""
     <div class="v6-meta">{rt_state}<br>{price_source}｜{update_text}</div>
   </div>
   <div class="v6-live-card">
-    <div class="kicker">DAY TRADE RADAR｜AI 當沖雷達</div>
+    <div class="kicker">SUPER DAY TRADE｜百億超級當沖雷達</div>
     <div class="v6-dt">{dt_signal}</div>
-    <div class="v6-score">當沖訊號 {dt_score}/100｜13:30前方向：{dt_direction}</div>
-    <div class="v6-meta">{dt_reason}<br>盤中防守參考：{dt_def:.2f}｜壓力參考：{dt_res:.2f}</div>
+    <div class="v7-prob">13:30前上漲機率代理值 <b>{_v7_up_prob:.1f}%</b>　｜　下跌 <b>{_v7_down_prob:.1f}%</b></div>
+    <div class="v6-score">方向：{dt_direction}｜資料完整度 {_v7_completeness*100:.0f}%</div>
+    <div class="v6-meta">{dt_reason}<br>盤中防守：{dt_def:.2f}｜壓力：{dt_res:.2f}</div>
   </div>
 </div>
 """, unsafe_allow_html=True)
+
+
+# ===== V7 全球事件情報 =====
+_event_icon = "🚨" if _v7_event["risk"]=="重大事件影響" else ("⚠️" if _v7_event["risk"]=="事件影響中等" else "🌐")
+st.markdown(f"""
+<div class="v7-event-card">
+ <div class="kicker">GLOBAL EVENT INTELLIGENCE｜全球事件情報</div>
+ <div class="v7-event-title">{_event_icon} {_v7_event["risk"]}</div>
+ <div class="v6-meta">已掃描台灣/國際新聞；與個股或重大市場事件相關 {_v7_event["related"]} 則｜
+ 事件偏多指標 {_v7_event["positive"]}｜偏空指標 {_v7_event["negative"]}</div>
+ <div class="v7-beta">波段上漲機率代理值 {_v7_swing_up:.1f}%｜下跌 {_v7_swing_down:.1f}%</div>
+</div>
+""", unsafe_allow_html=True)
+
+if _v7_event["items"]:
+    with st.expander("查看影響模型的台灣／國際重大新聞", expanded=False):
+        for _x in _v7_event["items"]:
+            _src = _x.get("source","")
+            _tone = _x.get("tone","待確認")
+            if _x.get("link"):
+                st.markdown(f"- **[{_tone}]** [{_x['title']}]({_x['link']})  `{_src}`")
+            else:
+                st.markdown(f"- **[{_tone}]** {_x['title']}  `{_src}`")
+        st.caption("新聞標題只作事件偵測與市場情緒輸入；重大事件仍應以公司、交易所、政府或可信媒體原始資訊確認。")
 
 st.markdown(f"""
 <div class="decision">
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V6 百億全資訊決策
+    AI ACTION CENTER｜V7 百億超級決策
     </div>
   <div class="decision-grid">
     <div>
