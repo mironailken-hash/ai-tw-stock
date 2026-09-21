@@ -824,6 +824,16 @@ st.markdown(f"""
 </div>
 """,unsafe_allow_html=True)
 
+st.markdown(f"""
+<div class="panel">
+<div class="kicker">FINAL SUMMARY｜市場總結</div>
+<div style="font-size:25px;font-weight:900">{overall_icon} {overall_label}｜AI 訊號 {overall}/100</div>
+<div class="action-sub">短線目前為「{status.replace("🚀 ","").replace("🟢 ","").replace("🟡 ","").replace("⚠️ ","").replace("🔴 ","")}」。
+重點不是預測哪一天一定上漲，而是等待價格、量能與技術條件觸發後再更新訊號。</div>
+</div>
+""",unsafe_allow_html=True)
+
+
 st.markdown("### 趨勢燈號")
 c1,c2,c3=st.columns(3)
 for col,title,score,period in zip([c1,c2,c3],["短線","中線","長線"],[short,mid,long],["1–10 交易日","2–6 週","1–6 個月"]):
@@ -968,13 +978,6 @@ if research_items:
 else:
     st.caption("目前未找到與此個股直接相關的近期公開券商研究索引。一般新聞不列入，避免資訊雜訊。")
 
-st.markdown(f"""
-<div class="panel">
-<div class="kicker">FINAL SUMMARY｜市場總結</div>
-<div style="font-size:25px;font-weight:900">{overall_icon} {overall_label}｜AI 訊號 {overall}/100</div>
-<div class="action-sub">短線目前為「{status.replace("🚀 ","").replace("🟢 ","").replace("🟡 ","").replace("⚠️ ","").replace("🔴 ","")}」。
-重點不是預測哪一天一定上漲，而是等待價格、量能與技術條件觸發後再更新訊號。</div>
-</div>
-""",unsafe_allow_html=True)
+
 
 st.warning("「可買進／等待買進／觀望／減碼警戒／賣出」為程式依最新取得或最新交易日市場資料計算的模型訊號，不是保證獲利或個人化投資指示；盤中行情與券商公開研究可能有延遲或資料缺漏。")
