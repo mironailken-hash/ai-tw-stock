@@ -9,7 +9,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from urllib.parse import quote
 
-st.set_page_config(page_title="KEN AI 台股智慧分析 V5.1 精準決策版", page_icon="📈", layout="wide")
+st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
 
 API = "https://api.finmindtrade.com/api/v4/data"
 
@@ -656,7 +656,7 @@ st.markdown(f"""
 <div class="hero" style="min-height:235px;background-image:{hero_bg};background-size:cover;background-position:center 27%;display:flex;align-items:center;">
   <div style="max-width:680px">
     <div class="kicker">TAIWAN EQUITY INTELLIGENCE TERMINAL</div>
-    <div class="hero-title"><span class="gold">KEN AI</span> 台股智慧決策系統</div>
+    <div class="hero-title"><span class="gold">KEN AI 百億</span>台股智慧決策系統</div>
     <div class="hero-sub" style="font-size:16px;margin-top:10px">市場訊號 × 法人籌碼 × 趨勢結構 × 風險驗證</div>
     <div style="margin-top:18px;color:#e8d18b;font-weight:800">用條件確認趨勢，不用情緒猜行情</div>
   </div>
