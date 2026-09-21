@@ -409,6 +409,35 @@ div[data-baseweb="input"] input::placeholder{
     .data-badge{font-size:11px;padding:4px 8px;}
 }
 
+
+/* ===== V5.2 搜尋按鈕黑金修正 ===== */
+div[data-testid="stForm"] button,
+div[data-testid="stForm"] button[kind="secondaryFormSubmit"],
+div[data-testid="stForm"] button[kind="primaryFormSubmit"]{
+    background:linear-gradient(135deg,#C69B2D,#F1D56A) !important;
+    color:#071522 !important;
+    border:1px solid #E7C75B !important;
+    border-radius:10px !important;
+    font-weight:900 !important;
+    min-height:44px !important;
+    box-shadow:0 5px 16px rgba(0,0,0,.28) !important;
+}
+div[data-testid="stForm"] button:hover{
+    background:linear-gradient(135deg,#E0B63E,#FFE58A) !important;
+    color:#020B12 !important;
+    border-color:#FFE58A !important;
+}
+div[data-testid="stForm"] button:focus,
+div[data-testid="stForm"] button:active{
+    background:linear-gradient(135deg,#B98B22,#E8C858) !important;
+    color:#071522 !important;
+    border-color:#F4D66A !important;
+}
+div[data-testid="stForm"] button p{
+    color:#071522 !important;
+    font-weight:900 !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
