@@ -494,6 +494,12 @@ border-radius:16px;padding:16px 18px;margin:8px 0 13px}
 .v8-grid>div{background:#06111c;border:1px solid #1e3a52;border-radius:10px;padding:9px;color:#dce7ef;font-size:12px}
 @media(max-width:700px){.v8-grid{grid-template-columns:1fr 1fr}}
 
+
+.v9-prob-rule{
+ background:#07131f;border:1px solid rgba(221,183,68,.50);border-radius:12px;
+ padding:10px 14px;margin:8px 0 12px;color:#dce7ef;font-size:12px;line-height:1.65}
+.v9-prob-rule b{color:#f2d56b}.v9-prob-rule span{color:#9fb3c4}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -925,7 +931,7 @@ def attack_status(short, close, support, resistance, vol_ratio, inst_score=50):
         reason="短線趨勢、價格突破、量能與籌碼中至少三項同步確認。"
     elif short>=62 and confirmations>=2:
         label="🟡 模型訊號：等待買進"
-        reason="方向偏強，但模型條件成立機率尚未完整；等待突破或拉回止穩。"
+        reason="方向偏強，但條件確認尚未完整；等待突破或拉回止穩。"
     elif short>=42:
         label="⚪ 模型訊號：觀望"
         reason="多空訊號尚未形成明顯優勢。"
@@ -1163,7 +1169,7 @@ overall_label,overall_icon=trend_label(overall)
 st.markdown(f"## {sid} {name or q}")
 m1,m2,m3,m4=st.columns(4)
 m1.metric("最新價格",f"{close:.2f}",f"{chg:+.2f}%")
-m2.metric("短線強度",f"上漲機率 {short:.0f}%")
+m2.metric("短線強度",f"{short_label}")
 m3.metric("量能比",f"{vol_ratio:.2f}x")
 m4.metric("AI 綜合訊號",f"{overall:.0f}%")
 
@@ -1198,8 +1204,8 @@ st.markdown(f"""
   <div class="v6-live-card">
     <div class="kicker">SUPER DAY TRADE｜百億超級當沖雷達</div>
     <div class="v6-dt">{dt_signal}</div>
-    <div class="v7-prob">13:30前上漲機率 <b>{_v8_day_up_txt}</b>　｜　下跌機率 <b>{_v8_day_down_txt}</b></div>
-    <div class="v6-score">方向：{dt_direction}｜資料完整度 {_v7_completeness*100:.0f}%</div>
+    <div class="v7-prob">13:30前上漲預估機率（Beta） <b>{_v8_day_up_txt}</b>　｜　下跌預估機率（Beta） <b>{_v8_day_down_txt}</b></div>
+    <div class="v6-score">方向：{dt_direction}｜資料狀態 {("完整" if _v7_completeness>=0.85 else ("部分缺失" if _v7_completeness>=0.55 else "不足"))}</div>
     <div class="v6-meta">{dt_reason}<br>盤中防守：{dt_def:.2f}｜壓力：{dt_res:.2f}</div>
   </div>
 </div>
@@ -1215,6 +1221,16 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+
+# ===== V9 真機率規則 =====
+st.markdown("""
+<div class="v9-prob-rule">
+ <b>V9 真機率規則</b>｜畫面中的「%」只用於有明確結果定義的預估機率或實際市場漲跌幅。
+ 技術、法人、風險、資料完整度等內部模型因素不再以百分比冒充機率。
+ <br><span>目前預測機率仍標示 Beta；完成歷史回測與校準前，不宣稱為已驗證勝率。</span>
+</div>
+""", unsafe_allow_html=True)
+
 # ===== V8 全市場資料引擎 =====
 _v8_status="可產生機率" if _v8_prob_ok else "資料不足・暫停機率判斷"
 _v8_status_icon="🟢" if _v8_prob_ok else "⚠️"
@@ -1226,7 +1242,7 @@ st.markdown(f"""
 <div class="v8-data-card">
  <div class="kicker">V8 MARKET DATA ENGINE｜全市場資料引擎</div>
  <div class="v8-data-title">{_v8_status_icon} {_v8_status}</div>
- <div class="v6-meta">資料完整度 {_v8_complete*100:.0f}%｜缺少必要資料：{("、".join(_v8_missing) if _v8_missing else "無")}</div>
+ <div class="v6-meta">資料狀態 {("完整" if _v8_complete>=0.85 else ("部分缺失" if _v8_complete>=0.55 else "不足"))}｜缺少必要資料：{("、".join(_v8_missing) if _v8_missing else "無")}</div>
  <div class="v8-grid">
    <div><b>臺指選擇權</b><br>{_pc_txt}</div>
    <div><b>臺指期外資</b><br>{_tx_txt}</div>
@@ -1244,7 +1260,7 @@ st.markdown(f"""
  <div class="v7-event-title">{_event_icon} {_v7_event["risk"]}</div>
  <div class="v6-meta">已掃描台灣/國際新聞；與個股或重大市場事件相關 {_v7_event["related"]} 則｜
  事件偏多指標 {_v7_event["positive"]}｜偏空指標 {_v7_event["negative"]}</div>
- <div class="v7-beta">未來波段上漲機率 {_v8_swing_up_txt}｜下跌機率 {_v8_swing_down_txt}</div>
+ <div class="v7-beta">未來波段上漲預估機率（Beta） {_v8_swing_up_txt}｜下跌預估機率（Beta） {_v8_swing_down_txt}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1264,15 +1280,15 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V8 百億全市場機率決策
+    AI ACTION CENTER｜V9 百億真機率決策
     </div>
   <div class="decision-grid">
     <div>
       <div class="decision-status">{status}</div>
       <div class="decision-note">{status_reason}</div>
-      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜模型條件成立機率 {confirmations/4*100:.0f}%</div>
+      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜條件確認 {confirmations/4*100:.0f}%</div>
     </div>
-    <div class="decision-score">{short:.0f}%<span style="font-size:15px;color:#9db2c8"> 上漲機率</span></div>
+    <div class="decision-score"><span style="font-size:22px">趨勢強度：</span>{short_label}</div>
   </div>
   <div class="level-grid">
     <div class="levelbox"><div class="small">突破確認價</div><div class="level">{breakout:.2f}</div><div class="small">突破且量能同步增強，再重新確認進攻訊號</div></div>
