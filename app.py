@@ -262,7 +262,7 @@ st.markdown(f"""
 
 with st.sidebar:
     st.markdown("## 股票搜尋")
-    q=st.text_input("輸入股票代號或名稱",value="6213",placeholder="例如：6213、聯茂、台積電")
+    q=st.text_input("輸入股票代號或名稱",value="",placeholder="例如：6213、聯茂、台積電")
     own=st.selectbox("持股狀態",["尚未持有","已持有"])
     cost=st.number_input("持有成本",min_value=0.0,value=0.0,step=0.5,disabled=own=="尚未持有")
     shares=st.number_input("持有股數",min_value=0,value=0,step=100,disabled=own=="尚未持有")
@@ -280,6 +280,10 @@ if not run:
       <div class="action-sub">首頁只保留：目前狀態、何時轉強、支撐壓力、短中長線。詳細模型收在展開面板內。</div>
     </div>
     """,unsafe_allow_html=True)
+    st.stop()
+
+if not q.strip():
+    st.warning("請先輸入股票代號或名稱。")
     st.stop()
 
 sid,name=resolve_stock(q)
@@ -349,7 +353,11 @@ else:
 
 st.markdown(f"""
 <div class="decision">
-  <div class="kicker">AI ACTION CENTER｜短線市場訊號</div>
+  <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
+    color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
+    letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
+    AI ACTION CENTER｜短線市場訊號
+    </div>
   <div class="decision-grid">
     <div>
       <div class="decision-status">{verdict}</div>
