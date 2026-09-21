@@ -6,216 +6,363 @@ import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from urllib.parse import quote
 
-st.set_page_config(page_title="KEN AI 台股智慧分析 V3",page_icon="🧧",layout="wide",initial_sidebar_state="expanded")
+st.set_page_config(page_title="KEN AI 台股智慧分析 V3 Pro", page_icon="📈", layout="wide")
 
+API = "https://api.finmindtrade.com/api/v4/data"
+
+# =========================
+# 專業深色介面
+# =========================
 st.markdown("""
 <style>
-.stApp{background:radial-gradient(circle at 85% 8%,rgba(212,175,55,.13),transparent 25%),linear-gradient(135deg,#06101d,#0b192b 55%,#07111e);color:#eaf2ff}
-[data-testid="stSidebar"]{background:linear-gradient(180deg,#071321,#0d1a2c);border-right:1px solid #20324a}
-[data-testid="stSidebar"] *{color:#eaf2ff}.block-container{max-width:1450px;padding-top:1rem}
-.hero{padding:25px 30px;border:1px solid rgba(212,175,55,.38);border-radius:22px;background:linear-gradient(120deg,#10213a,#081322);box-shadow:0 18px 55px #0005;margin-bottom:18px}
-.hero-title{font-size:38px;font-weight:900;color:#fff}.gold{color:#f3cf62}.sub{color:#8fbce8}
-.card,.model{background:linear-gradient(145deg,rgba(17,33,55,.96),rgba(9,21,37,.96));border:1px solid #263951;border-radius:18px;padding:18px;margin:8px 0;box-shadow:0 10px 28px #0004}
-.model{border-radius:14px;padding:15px}.signal{font-size:34px;font-weight:900}.muted{color:#8fa8c5}
+.stApp{
+    background:
+      radial-gradient(circle at 88% 2%, rgba(212,175,55,.10), transparent 24%),
+      linear-gradient(135deg,#06101c 0%,#091827 52%,#07111e 100%);
+    color:#F4F7FB;
+}
+.block-container{max-width:1380px;padding-top:1.1rem;padding-bottom:3rem;}
+[data-testid="stSidebar"]{background:#071321;border-right:1px solid #1d3148;}
+[data-testid="stSidebar"] *{color:#F4F7FB;}
+
+.hero{
+    background:linear-gradient(110deg,rgba(13,30,50,.98),rgba(8,18,31,.98));
+    border:1px solid rgba(213,178,75,.38);
+    border-radius:20px;padding:24px 28px;margin-bottom:18px;
+    box-shadow:0 14px 40px rgba(0,0,0,.28);
+}
+.hero-title{font-size:34px;font-weight:900;letter-spacing:.5px;color:#fff;}
+.hero-sub{color:#9db5ce;margin-top:4px;font-size:14px;}
+.gold{color:#E9C65C;}
+
+.panel{
+    background:linear-gradient(145deg,rgba(15,31,51,.98),rgba(9,21,36,.98));
+    border:1px solid #20354d;border-radius:18px;padding:20px;
+    box-shadow:0 10px 30px rgba(0,0,0,.20);margin:8px 0 14px;
+}
+.action-title{font-size:31px;font-weight:900;margin:3px 0;}
+.action-sub{font-size:15px;color:#a8bbcf;}
+.price{font-size:31px;font-weight:900;}
+.kicker{font-size:12px;color:#7f9ab7;letter-spacing:1.2px;font-weight:700;}
+.level{font-size:22px;font-weight:850;color:#fff;}
+.small{color:#94a9bf;font-size:13px;}
+
+div[data-testid="stTextInput"] input,
+div[data-testid="stNumberInput"] input{
+    background:#0A1828 !important;
+    color:#FFFFFF !important;
+    border:1px solid #B99B43 !important;
+    border-radius:10px !important;
+    font-weight:700 !important;
+}
+div[data-testid="stTextInput"] input::placeholder{color:#C7D0DA !important;opacity:1 !important;}
+div[data-testid="stTextInput"] input:focus,
+div[data-testid="stNumberInput"] input:focus{
+    border:1px solid #F0CC61 !important;
+    box-shadow:0 0 0 2px rgba(240,204,97,.16) !important;
+}
+div[data-testid="stSelectbox"] > div > div{
+    background:#0A1828 !important;color:#fff !important;border-color:#B99B43 !important;
+}
+.stButton > button{
+    background:linear-gradient(90deg,#D4B14E,#F0D276) !important;
+    color:#111820 !important;border:0 !important;border-radius:10px !important;
+    font-weight:900 !important;min-height:45px;
+}
+.stButton > button:hover{box-shadow:0 0 20px rgba(233,198,92,.25);}
+[data-testid="stMetric"]{
+    background:#0A1828;border:1px solid #20354d;border-radius:13px;padding:12px;
+}
+[data-testid="stMetricValue"]{color:#fff;}
+details{background:#091725;border:1px solid #20354d;border-radius:14px;padding:5px 12px;}
+hr{border-color:#20354d;}
 </style>
-""",unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
-API="https://api.finmindtrade.com/api/v4/data"
-
-def fm(dataset,sid,start,end,token=""):
-    p={"dataset":dataset,"data_id":sid,"start_date":str(start),"end_date":str(end)}
-    if token:p["token"]=token
+# =========================
+# 資料與計算
+# =========================
+def fm(dataset, sid, start, end, token=""):
+    params={"dataset":dataset,"data_id":sid,"start_date":str(start),"end_date":str(end)}
+    if token: params["token"]=token
     try:
-        j=requests.get(API,params=p,timeout=18).json()
-        return pd.DataFrame(j.get("data",[])) if j.get("status")==200 else pd.DataFrame()
-    except:return pd.DataFrame()
+        r=requests.get(API,params=params,timeout=18)
+        j=r.json()
+        if r.status_code==200 and j.get("status")==200:
+            return pd.DataFrame(j.get("data",[]))
+    except Exception:
+        pass
+    return pd.DataFrame()
 
 @st.cache_data(ttl=86400)
-def stocks():
+def stock_table():
     rows=[]
-    for u in ["https://openapi.twse.com.tw/v1/opendata/t187ap03_L","https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"]:
+    urls=[
+        "https://openapi.twse.com.tw/v1/opendata/t187ap03_L",
+        "https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL"
+    ]
+    for url in urls:
         try:
-            for x in requests.get(u,timeout=12).json():
+            data=requests.get(url,timeout=12).json()
+            for x in data:
                 sid=str(x.get("公司代號",x.get("Code",""))).strip()
                 name=str(x.get("公司簡稱",x.get("Name",""))).strip()
-                if sid and name:rows.append((sid,name))
-            if rows:break
-        except:pass
+                if sid and name: rows.append((sid,name))
+            if rows: break
+        except Exception: pass
     return pd.DataFrame(rows,columns=["代號","名稱"]).drop_duplicates() if rows else pd.DataFrame(columns=["代號","名稱"])
 
-def resolve(q):
-    q=q.strip(); m=stocks()
+def resolve_stock(q):
+    q=q.strip()
+    m=stock_table()
     if q.isdigit():
-        h=m[m["代號"]==q]
-        return q,(h.iloc[0]["名稱"] if len(h) else "")
+        hit=m[m["代號"]==q]
+        return q,(str(hit.iloc[0]["名稱"]) if len(hit) else "")
     if len(m):
-        h=m[m["名稱"].str.contains(q,case=False,na=False)]
-        if len(h):return str(h.iloc[0]["代號"]),str(h.iloc[0]["名稱"])
+        hit=m[m["名稱"].str.contains(q,case=False,na=False)]
+        if len(hit): return str(hit.iloc[0]["代號"]),str(hit.iloc[0]["名稱"])
     return "",q
 
-def ind(df):
-    d=df.copy();d["date"]=pd.to_datetime(d["date"]);d=d.sort_values("date")
+def add_indicators(df):
+    d=df.copy()
+    d["date"]=pd.to_datetime(d["date"])
+    d=d.sort_values("date")
     c=pd.to_numeric(d["close"],errors="coerce")
-    for n in [5,10,20,60]:d[f"MA{n}"]=c.rolling(n).mean()
-    z=c.diff();g=z.clip(lower=0).rolling(14).mean();l=(-z.clip(upper=0)).rolling(14).mean()
-    d["RSI"]=100-100/(1+g/l.replace(0,np.nan))
-    lo=pd.to_numeric(d["min"],errors="coerce").rolling(9).min();hi=pd.to_numeric(d["max"],errors="coerce").rolling(9).max()
-    rsv=(c-lo)/(hi-lo).replace(0,np.nan)*100;d["K"]=rsv.ewm(alpha=1/3,adjust=False).mean();d["D"]=d["K"].ewm(alpha=1/3,adjust=False).mean()
+    for n in [5,10,20,60]:
+        d[f"MA{n}"]=c.rolling(n).mean()
+    delta=c.diff()
+    gain=delta.clip(lower=0).rolling(14).mean()
+    loss=(-delta.clip(upper=0)).rolling(14).mean()
+    d["RSI"]=100-(100/(1+gain/loss.replace(0,np.nan)))
     d["MACD"]=c.ewm(span=12,adjust=False).mean()-c.ewm(span=26,adjust=False).mean()
     d["SIGNAL"]=d["MACD"].ewm(span=9,adjust=False).mean()
     return d
 
-def tscore(d,n):
-    x=d.tail(n);r=x.iloc[-1];s=50;c=float(r["close"])
-    for ma,w in [("MA5",6),("MA20",10),("MA60",12)]:
-        if pd.notna(r.get(ma)):s+=w if c>r[ma] else -w
+def score_trend(d, n):
+    x=d.tail(n); r=x.iloc[-1]; s=50; close=float(r["close"])
+    for ma,w in [("MA5",7),("MA20",11),("MA60",12)]:
+        if pd.notna(r.get(ma)): s += w if close>float(r[ma]) else -w
     if pd.notna(r["RSI"]):
-        s+=8 if 50<=r["RSI"]<=70 else (-8 if r["RSI"]<40 else (-3 if r["RSI"]>78 else 0))
-    if pd.notna(r["MACD"]) and pd.notna(r["SIGNAL"]):s+=8 if r["MACD"]>r["SIGNAL"] else -8
-    if len(x)>5:s+=8 if c>float(x.iloc[0]["close"]) else -8
+        if 50<=r["RSI"]<=70: s+=8
+        elif r["RSI"]<40: s-=8
+        elif r["RSI"]>78: s-=4
+    if pd.notna(r["MACD"]) and pd.notna(r["SIGNAL"]):
+        s += 9 if r["MACD"]>r["SIGNAL"] else -9
+    if len(x)>5:
+        s += 8 if close>float(x.iloc[0]["close"]) else -8
     return int(np.clip(s,0,100))
 
-def label(s):
+def trend_label(s):
     if s>=78:return "強勢偏多","🟢"
     if s>=60:return "偏多","🟢"
-    if s>=42:return "中性","🟡"
+    if s>=42:return "觀望","🟡"
     if s>=25:return "偏空","🔴"
     return "強勢偏空","🔴"
 
-def rss(q,n=6):
-    try:
-        u=f"https://news.google.com/rss/search?q={quote(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
-        root=ET.fromstring(requests.get(u,timeout=12,headers={"User-Agent":"Mozilla/5.0"}).content)
-        return [{"title":x.findtext("title",""),"link":x.findtext("link","")} for x in root.findall(".//item")[:n]]
-    except:return []
-
-def institutional_score(x):
-    if x.empty:return 50,0
-    buy=[c for c in x if "buy" in c.lower()];sell=[c for c in x if "sell" in c.lower()]
+def institutional_score(inst):
+    if inst.empty:return 50,0
+    buy=[c for c in inst.columns if "buy" in c.lower()]
+    sell=[c for c in inst.columns if "sell" in c.lower()]
     if not buy or not sell:return 50,0
-    b=x[buy].apply(pd.to_numeric,errors="coerce").fillna(0).sum(axis=1)
-    s=x[sell].apply(pd.to_numeric,errors="coerce").fillna(0).sum(axis=1)
+    b=inst[buy].apply(pd.to_numeric,errors="coerce").fillna(0).sum(axis=1)
+    s=inst[sell].apply(pd.to_numeric,errors="coerce").fillna(0).sum(axis=1)
     net=float((b-s).tail(5).sum())
     return (72 if net>0 else 28 if net<0 else 50),net
 
-st.markdown("""<div class="hero"><div class="hero-title">🧧 <span class="gold">財神金庫</span>　KEN AI 台股智慧分析 V3　🪙 🪙 🪙</div>
-<div class="sub">TAIWAN STOCK INTELLIGENCE TERMINAL ｜ 技術 × 籌碼 × 新聞 × 風險 × 多模型共識</div></div>""",unsafe_allow_html=True)
+def rss(q,n=5):
+    try:
+        url=f"https://news.google.com/rss/search?q={quote(q)}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        root=ET.fromstring(requests.get(url,timeout=12,headers={"User-Agent":"Mozilla/5.0"}).content)
+        return [{"title":x.findtext("title",""),"link":x.findtext("link","")} for x in root.findall(".//item")[:n]]
+    except Exception:return []
+
+def attack_status(short, close, support, resistance, vol_ratio):
+    breakout=max(resistance, close*1.015)
+    pull_lo=support
+    pull_hi=support*1.025
+    weak=support*0.985
+    if short>=78 and close>=resistance and vol_ratio>=1.2:
+        return "🚀 短線進攻訊號成立","多方動能與突破條件較完整",breakout,pull_lo,pull_hi,weak
+    if short>=65:
+        return "🟢 等待突破進攻","偏多，但等待突破確認可降低假突破風險",breakout,pull_lo,pull_hi,weak
+    if short>=42:
+        return "🟡 觀望","短線條件尚未形成一致方向",breakout,pull_lo,pull_hi,weak
+    if short>=25:
+        return "⚠️ 轉弱警戒","短線結構偏弱，先等待重新站回關鍵區",breakout,pull_lo,pull_hi,weak
+    return "🔴 短線弱勢","目前短線動能明顯偏弱",breakout,pull_lo,pull_hi,weak
+
+# =========================
+# Header + Search
+# =========================
+st.markdown("""
+<div class="hero">
+  <div class="hero-title">財神．金策 <span class="gold">KEN AI</span> 台股智慧分析</div>
+  <div class="hero-sub">TAIWAN EQUITY INTELLIGENCE TERMINAL　｜　簡潔、明確、可追蹤的市場訊號</div>
+</div>
+""",unsafe_allow_html=True)
 
 with st.sidebar:
-    st.markdown("## 🔎 智慧搜尋")
-    q=st.text_input("股票代號或名稱",value="6213",placeholder="6213、聯茂、台積電")
-    own=st.radio("持股狀態",["尚未持有","已持有"])
-    cost=st.number_input("持有成本（元）",min_value=0.0,value=0.0,step=0.5,disabled=own=="尚未持有")
+    st.markdown("## 股票搜尋")
+    q=st.text_input("輸入股票代號或名稱",value="6213",placeholder="例如：6213、聯茂、台積電")
+    own=st.selectbox("持股狀態",["尚未持有","已持有"])
+    cost=st.number_input("持有成本",min_value=0.0,value=0.0,step=0.5,disabled=own=="尚未持有")
     shares=st.number_input("持有股數",min_value=0,value=0,step=100,disabled=own=="尚未持有")
-    token=st.text_input("FinMind Token（建議填入）",type="password")
-    run=st.button("🚀 啟動 V3 多模型分析",use_container_width=True)
+    token=st.text_input("FinMind Token",type="password",placeholder="可先留空測試")
+    run=st.button("開始分析",use_container_width=True)
 
 if not run:
-    st.markdown("""<div class="card"><h2>🧠 AI MULTI-MODEL ANALYSIS</h2>
-    <p>輸入股票代號或名稱，分析短／中／長線、技術、法人籌碼、新聞索引、量價熱度與風險。</p>
-    <p>🟢 強勢偏多　🟢 偏多　🟡 中性　🔴 偏空　🔴 強勢偏空</p></div>""",unsafe_allow_html=True)
+    st.markdown("""
+    <div class="panel">
+      <div class="kicker">QUICK DECISION</div>
+      <div class="action-title">搜尋一檔股票，先看短線總結</div>
+      <div class="action-sub">首頁只保留：目前狀態、何時轉強、支撐壓力、短中長線。詳細模型收在展開面板內。</div>
+    </div>
+    """,unsafe_allow_html=True)
     st.stop()
 
-sid,name=resolve(q)
+sid,name=resolve_stock(q)
 if not sid:
-    st.error("找不到股票名稱對應代號，請改用股票代號。");st.stop()
+    st.error("找不到股票名稱。請改輸入股票代號，例如 6213。")
+    st.stop()
 
-today=date.today();p=fm("TaiwanStockPrice",sid,today-timedelta(days=330),today,token)
-if p.empty:
-    st.error("抓不到股價資料。請確認代號，或輸入自己的 FinMind Token。");st.stop()
+today=date.today()
+price=fm("TaiwanStockPrice",sid,today-timedelta(days=330),today,token)
+if price.empty:
+    st.error("目前無法取得股價資料。請確認股票代號，或填入自己的 FinMind Token 後再試。")
+    st.stop()
 
-d=ind(p);r=d.iloc[-1];close=float(r["close"]);prev=float(d.iloc[-2]["close"]);chg=(close/prev-1)*100
-v=pd.to_numeric(d["Trading_Volume"],errors="coerce");vol=float(v.iloc[-1])
-low20=float(pd.to_numeric(d.tail(20)["min"]).min());high20=float(pd.to_numeric(d.tail(20)["max"]).max())
-low60=float(pd.to_numeric(d.tail(60)["min"]).min());high60=float(pd.to_numeric(d.tail(60)["max"]).max())
+d=add_indicators(price)
+r=d.iloc[-1]
+close=float(r["close"])
+prev=float(d.iloc[-2]["close"]) if len(d)>1 else close
+chg=(close/prev-1)*100 if prev else 0
+vols=pd.to_numeric(d["Trading_Volume"],errors="coerce")
+vol=float(vols.iloc[-1])
+avg20=float(vols.tail(20).mean()) if len(vols) else 0
+vol_ratio=vol/avg20 if avg20 else 1
+
+support=float(pd.to_numeric(d.tail(20)["min"],errors="coerce").min())
+resistance=float(pd.to_numeric(d.tail(20)["max"],errors="coerce").max())
+support60=float(pd.to_numeric(d.tail(60)["min"],errors="coerce").min())
+resistance60=float(pd.to_numeric(d.tail(60)["max"],errors="coerce").max())
+
+short=score_trend(d,10)
+mid=score_trend(d,30)
+long=score_trend(d,90)
 
 inst=fm("TaiwanStockInstitutionalInvestorsBuySell",sid,today-timedelta(days=35),today,token)
-isc,inet=institutional_score(inst)
-short,mid,long=tscore(d,10),tscore(d,30),tscore(d,90)
-tech=int(round(short*.45+mid*.35+long*.20))
-heat=int(np.clip(50+(12 if abs(chg)>2 else 0)+(12 if vol>v.tail(20).mean() else 0),0,100))
+inst_score,inst_net=institutional_score(inst)
+
+heat=int(np.clip(50+(12 if abs(chg)>2 else 0)+(12 if vol_ratio>=1.2 else 0),0,100))
 risk=int(np.clip(50+abs(chg)*4+(8 if pd.notna(r["RSI"]) and (r["RSI"]>75 or r["RSI"]<30) else 0),0,100))
-# 未接可靠結構化來源的模型保持中性，避免製造假分數
-basic=newss=globalm=50
-overall=int(np.clip(round(tech*.42+isc*.25+heat*.13+basic*.08+newss*.07+globalm*.05-(risk-50)*.10),0,100))
-olab,oico=label(overall)
+tech=int(round(short*.5+mid*.3+long*.2))
+overall=int(np.clip(round(tech*.58+inst_score*.27+heat*.15-(risk-50)*.08),0,100))
+overall_label,overall_icon=trend_label(overall)
 
-st.markdown(f"## {sid} {name or q}　｜　{pd.to_datetime(r['date']).date()}")
+status,status_reason,breakout,pull_lo,pull_hi,weak=attack_status(short,close,support,resistance,vol_ratio)
+
+# =========================
+# 簡潔首頁
+# =========================
+st.markdown(f"## {sid} {name or q}")
+m1,m2,m3,m4=st.columns(4)
+m1.metric("最新收盤",f"{close:.2f}",f"{chg:+.2f}%")
+m2.metric("短線強度",f"{short}/100")
+m3.metric("量能比",f"{vol_ratio:.2f}x")
+m4.metric("AI 綜合訊號",f"{overall}/100")
+
+st.markdown(f"""
+<div class="panel">
+  <div class="kicker">SHORT-TERM ACTION｜短線作戰總結</div>
+  <div class="action-title">{status}</div>
+  <div class="action-sub">{status_reason}</div>
+  <hr>
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px">
+    <div><div class="small">突破觀察價</div><div class="level">{breakout:.2f}</div></div>
+    <div><div class="small">拉回觀察區</div><div class="level">{pull_lo:.2f} ～ {pull_hi:.2f}</div></div>
+    <div><div class="small">轉弱警戒</div><div class="level">{weak:.2f}</div></div>
+  </div>
+  <hr>
+  <b>訊號升級條件：</b>突破觀察價，且成交量明顯高於近期均量、技術結構未轉弱時，短線訊號可升級。<br>
+  <b>失效條件：</b>跌破轉弱警戒價，應重新評估目前短線結構。
+</div>
+""",unsafe_allow_html=True)
+
+st.markdown("### 趨勢燈號")
+c1,c2,c3=st.columns(3)
+for col,title,score,period in zip([c1,c2,c3],["短線","中線","長線"],[short,mid,long],["1–10 交易日","2–6 週","1–6 個月"]):
+    lab,ico=trend_label(score)
+    with col:
+        st.markdown(f"""<div class="panel"><div class="kicker">{period}</div>
+        <div style="font-size:24px;font-weight:900">{ico} {title}｜{lab}</div>
+        <div class="gold" style="font-size:25px;font-weight:900">{score}/100</div></div>""",unsafe_allow_html=True)
+
+st.markdown("### 關鍵價位")
 a,b,c,e=st.columns(4)
-a.metric("最新收盤",f"{close:.2f}",f"{chg:+.2f}%")
-b.metric("RSI(14)",f"{float(r['RSI']):.1f}" if pd.notna(r["RSI"]) else "-")
-c.metric("法人近5日代理淨額",f"{inet:,.0f}")
-e.metric("綜合模型",f"{overall}/100")
-
-st.markdown(f"""<div class="card"><div class="muted">MODEL CONSENSUS｜多模型決策中心</div>
-<div class="signal">{oico} {olab}　<span class="gold">{overall}/100</span></div>
-<div>訊號明確，但不把尚未取得的資料假裝成已分析結果。</div></div>""",unsafe_allow_html=True)
-
-models=[("📈 技術模型",tech),("🏦 法人籌碼模型",isc),("💰 基本面模型*",basic),("📰 新聞情緒模型*",newss),("🌎 國際市場模型*",globalm),("🔥 市場熱度模型",heat)]
-cols=st.columns(3)
-for i,(n,s) in enumerate(models):
-    la,ic=label(s)
-    with cols[i%3]:
-        st.markdown(f'<div class="model"><b>{n}</b><br><span style="font-size:28px;font-weight:900">{s}/100</span><br>{ic} {la}</div>',unsafe_allow_html=True)
-        st.progress(s/100)
-st.caption("* 尚未串接可靠結構化來源的模型維持 50 中性，不用猜測製造分數。")
-
-st.markdown("### ⏱️ 短／中／長線")
-cols=st.columns(3)
-for col,title,s,period in zip(cols,["短線","中線","長線"],[short,mid,long],["1–10 個交易日","2–6 週","1–6 個月"]):
-    la,ic=label(s)
-    with col:st.markdown(f'<div class="card"><span class="muted">{period}</span><h2>{title}：{ic} {la}</h2><span class="gold" style="font-size:28px;font-weight:900">{s}/100</span></div>',unsafe_allow_html=True)
-
-st.markdown("### 🎯 關鍵價位")
-x1,x2,x3,x4=st.columns(4)
-x1.metric("20日重要支撐",f"{low20:.2f}");x2.metric("20日主要壓力",f"{high20:.2f}")
-x3.metric("60日重要支撐",f"{low60:.2f}");x4.metric("60日主要壓力",f"{high60:.2f}")
-if overall>=60:st.info(f"目前偏多；若有效跌破 {low20:.2f}，多方訊號需要重新評估。")
-elif overall<=41:st.warning(f"目前偏空；若有效突破 {high20:.2f}，偏空訊號需要重新評估。")
-else:st.info(f"目前中性；優先觀察 {low20:.2f}～{high20:.2f} 哪一側先有效突破。")
+a.metric("20日支撐",f"{support:.2f}")
+b.metric("20日壓力",f"{resistance:.2f}")
+c.metric("60日支撐",f"{support60:.2f}")
+e.metric("60日壓力",f"{resistance60:.2f}")
 
 if own=="已持有" and cost>0:
-    pnl=(close/cost-1)*100
-    st.markdown("### 💼 持股面板")
-    a,b,c=st.columns(3);a.metric("成本",f"{cost:.2f}");b.metric("未實現報酬率",f"{pnl:+.2f}%");c.metric("估算損益",f"{(close-cost)*shares:+,.0f} 元")
+    st.markdown("### 我的持股")
+    a,b,c=st.columns(3)
+    a.metric("成本",f"{cost:.2f}")
+    b.metric("目前報酬",f"{(close/cost-1)*100:+.2f}%")
+    c.metric("估算損益",f"{(close-cost)*shares:+,.0f} 元")
 
-st.markdown("### 📊 120 日價格與均線")
-st.line_chart(d.set_index("date")[["close","MA5","MA20","MA60"]].tail(120),use_container_width=True)
+# =========================
+# 詳細資訊收起來
+# =========================
+with st.expander("查看 AI 模型面板與分析原因"):
+    st.markdown(f"### {overall_icon} AI 綜合判斷：{overall}/100｜{overall_label}")
+    models=[
+        ("技術模型",tech),
+        ("法人籌碼",inst_score),
+        ("市場熱度",heat),
+        ("風險壓力",100-risk)
+    ]
+    for title,score in models:
+        lab,ico=trend_label(score)
+        st.write(f"**{title}**　{score}/100　{ico} {lab}")
+        st.progress(score/100)
+    st.caption("基本面、新聞情緒與國際市場若尚未接入可靠結構化資料，不會用猜測製造分數。")
 
-st.markdown("### 📰 公開新聞情報")
-news=rss(f"{sid} {name} 台股",7)
-if news:
-    for n in news:st.markdown(f"- [{n['title']}]({n['link']})")
-else:st.caption("目前未取得相關公開新聞索引。")
+with st.expander("查看價格與均線"):
+    st.line_chart(d.set_index("date")[["close","MA5","MA20","MA60"]].tail(120),use_container_width=True)
 
-c1,c2=st.columns(2)
-with c1:
-    st.markdown("#### 📺 錢線百分百")
-    z=rss(f'"錢線百分百" {sid} {name}',4)
-    if z:
-        for n in z:st.markdown(f"- [{n['title']}]({n['link']})")
-    else:st.caption("目前沒有近期相關公開索引。")
-with c2:
-    st.markdown("#### 💬 股市爆料同學會")
-    z=rss(f'"股市爆料同學會" {sid} {name}',4)
-    if z:
-        for n in z:st.markdown(f"- [{n['title']}]({n['link']})")
-    else:st.caption("目前沒有近期相關公開索引。")
+with st.expander("查看法人籌碼"):
+    st.write(f"近 5 日法人代理淨額：**{inst_net:,.0f}**")
+    if not inst.empty:
+        cols=[x for x in ["date","name","buy","sell"] if x in inst.columns]
+        st.dataframe(inst[cols].tail(20) if cols else inst.tail(20),use_container_width=True,hide_index=True)
 
-reasons=[]
-if tech>=60:reasons.append("技術結構偏多")
-elif tech<=41:reasons.append("技術結構偏空")
-if isc>=60:reasons.append("法人籌碼偏正向")
-elif isc<=41:reasons.append("法人籌碼偏弱")
-if heat>=60:reasons.append("量價熱度提高")
-reason="、".join(reasons) if reasons else "主要模型目前沒有形成高度一致方向"
+with st.expander("查看新聞／錢線百分百／股市爆料同學會"):
+    st.markdown("#### 公開新聞")
+    news=rss(f"{sid} {name} 台股",6)
+    if news:
+        for n in news: st.markdown(f"- [{n['title']}]({n['link']})")
+    else: st.caption("目前未取得相關公開新聞索引。")
 
-st.markdown(f"""### ⚡ 犀利結論
-<div class="card"><h2>{oico} {olab}｜{overall}/100</h2>
-<b>核心理由：</b>{reason}。<br><br>
-<b>短線：</b>{label(short)[1]} {label(short)[0]}　｜　
-<b>中線：</b>{label(mid)[1]} {label(mid)[0]}　｜　
-<b>長線：</b>{label(long)[1]} {label(long)[0]}<br><br>
-<b>關鍵區間：</b>{low20:.2f} ～ {high20:.2f}</div>""",unsafe_allow_html=True)
+    st.markdown("#### 錢線百分百相關公開索引")
+    tv=rss(f'"錢線百分百" {sid} {name}',4)
+    if tv:
+        for n in tv: st.markdown(f"- [{n['title']}]({n['link']})")
+    else: st.caption("目前沒有近期相關公開索引。")
 
-st.warning("本系統為市場研究與資訊整理工具。偏多／中性／偏空是模型市場訊號，不保證未來漲跌，也不構成個別投資建議。新聞、節目及論壇為公開索引，論壇意見不等同事實。")
+    st.markdown("#### 股市爆料同學會相關公開索引")
+    forum=rss(f'"股市爆料同學會" {sid} {name}',4)
+    if forum:
+        for n in forum: st.markdown(f"- [{n['title']}]({n['link']})")
+    else: st.caption("目前沒有近期相關公開索引。")
+
+st.markdown(f"""
+<div class="panel">
+<div class="kicker">FINAL SUMMARY｜市場總結</div>
+<div style="font-size:25px;font-weight:900">{overall_icon} {overall_label}｜AI 訊號 {overall}/100</div>
+<div class="action-sub">短線目前為「{status.replace("🚀 ","").replace("🟢 ","").replace("🟡 ","").replace("⚠️ ","").replace("🔴 ","")}」。
+重點不是預測哪一天一定上漲，而是等待價格、量能與技術條件觸發後再更新訊號。</div>
+</div>
+""",unsafe_allow_html=True)
+
+st.warning("本系統為市場研究與資訊整理工具。『進攻／觀望／轉弱』代表模型市場訊號，不保證未來漲跌，也不構成個別投資建議。")
