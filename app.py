@@ -1,9 +1,9 @@
 import streamlit as st
+import requests
 import pandas as pd
 import numpy as np
 import re
 import json
-import osquests
 import plotly.graph_objects as go
 try:
     from sklearn.linear_model import LogisticRegression
