@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V16.2")
+    st.markdown("## AI 條件機率｜V16.4")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V16.2 媒體擴充＋公告分流版
+    AI ACTION CENTER｜V16.4 多空當沖決策版
     </div>
   <div class="decision-grid">
     <div>
@@ -3236,5 +3236,163 @@ try:
 except Exception:
     try:_v162_name=name
     except Exception:_v162_name=""
-_v162_render(sid,_v162_name)
+# 新聞模組已停用
+
+
+# ===== V16.4：多單 / 放空 / 當沖決策面板 =====
+def _v164_num(x, default=None):
+    try:
+        v=float(x)
+        return v if np.isfinite(v) else default
+    except Exception:
+        return default
+
+def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
+    """條件式市場訊號，不代表獲利保證。"""
+    if price_df is None or len(price_df) < 25:
+        return {
+            "long":("觀望","資料不足"),
+            "short":("暫不放空","資料不足"),
+            "day":("等待","盤中資料不足"),
+            "day_condition":"等待更多即時資料",
+            "day_invalid":"—"
+        }
+
+    close = pd.to_numeric(price_df["close"], errors="coerce").dropna()
+    if len(close) < 25:
+        return {"long":("觀望","資料不足"),"short":("暫不放空","資料不足"),
+                "day":("等待","盤中資料不足"),"day_condition":"等待更多資料","day_invalid":"—"}
+
+    c=float(close.iloc[-1])
+    ma5=float(close.tail(5).mean())
+    ma20=float(close.tail(20).mean())
+    r1=(c/float(close.iloc[-2])-1) if len(close)>=2 else 0
+    r5=(c/float(close.iloc[-6])-1) if len(close)>=6 else 0
+
+    # Long / short are independently scored, not simple inverses.
+    long_pts=0; short_pts=0
+    if c>ma5: long_pts+=1
+    else: short_pts+=1
+    if ma5>ma20: long_pts+=1
+    else: short_pts+=1
+    if r5>0: long_pts+=1
+    elif r5<0: short_pts+=1
+    if p1 is not None:
+        if p1>=0.56: long_pts+=1
+        elif p1<=0.44: short_pts+=1
+    if p5 is not None:
+        if p5>=0.58: long_pts+=1
+        elif p5<=0.42: short_pts+=1
+    if _v164_num(inst_score,0)>0: long_pts+=1
+    elif _v164_num(inst_score,0)<0: short_pts+=1
+
+    if long_pts>=5:
+        long_sig=("符合買進條件",f"{long_pts}/6 條件偏多")
+    elif long_pts>=3:
+        long_sig=("等待買進",f"{long_pts}/6 條件偏多")
+    else:
+        long_sig=("觀望",f"{long_pts}/6 條件偏多")
+
+    if short_pts>=5:
+        short_sig=("符合放空條件",f"{short_pts}/6 條件偏空")
+    elif short_pts>=3:
+        short_sig=("等待放空",f"{short_pts}/6 條件偏空")
+    else:
+        short_sig=("暫不放空",f"{short_pts}/6 條件偏空")
+
+    # Intraday signal uses live quote if available.
+    q=quote if isinstance(quote,dict) else {}
+    lp=_v164_num(q.get("price"),c)
+    op=_v164_num(q.get("open"))
+    hi=_v164_num(q.get("high"))
+    lo=_v164_num(q.get("low"))
+    prev=_v164_num(q.get("prev_close"))
+    vol=_v164_num(q.get("volume"))
+
+    day_sig="等待"
+    day_reason="即時條件未形成"
+    cond="等待價格與量能確認"
+    invalid="—"
+
+    if all(v is not None for v in [lp,op,hi,lo,prev]) and hi>=lo:
+        rng=max(hi-lo,0.01)
+        pos=(lp-lo)/rng
+        pct=(lp/prev-1) if prev else 0
+
+        bull=0; bear=0
+        if lp>op: bull+=1
+        elif lp<op: bear+=1
+        if lp>prev: bull+=1
+        elif lp<prev: bear+=1
+        if pos>=0.65: bull+=1
+        elif pos<=0.35: bear+=1
+        if r5>0: bull+=1
+        elif r5<0: bear+=1
+
+        if bull>=4 and pct<0.07:
+            day_sig="偏多當沖"
+            day_reason=f"{bull}/4 盤中條件偏多"
+            cond=f"守住 {max(op,prev):.2f} 且維持今日區間上緣"
+            invalid=f"跌破 {max(lo, min(op,prev)):.2f}"
+        elif bear>=4 and pct>-0.07:
+            day_sig="偏空當沖"
+            day_reason=f"{bear}/4 盤中條件偏空"
+            cond=f"壓在 {min(op,prev):.2f} 下且維持今日區間下緣"
+            invalid=f"站回 {min(hi, max(op,prev)):.2f}"
+        else:
+            day_sig="等待"
+            day_reason=f"偏多 {bull}/4｜偏空 {bear}/4"
+            cond=f"突破 {hi:.2f} 看多確認；跌破 {lo:.2f} 看空確認"
+            invalid="未形成方向前不追價"
+
+    return {"long":long_sig,"short":short_sig,"day":(day_sig,day_reason),
+            "day_condition":cond,"day_invalid":invalid}
+
+def _v164_color(sig):
+    if sig in ("符合買進條件","偏多當沖"): return "#ff4d4f"   # 台股紅=多
+    if sig in ("符合放空條件","偏空當沖"): return "#21c77a" # 台股綠=空
+    if "等待" in sig: return "#f0ad4e"
+    return "#aab4c0"
+
+def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0):
+    r=_v164_long_short_daytrade(price_df,quote,p1,p5,inst_score)
+    items=[
+        ("多單訊號",r["long"][0],r["long"][1]),
+        ("放空訊號",r["short"][0],r["short"][1]),
+        ("當沖訊號",r["day"][0],r["day"][1]),
+    ]
+    st.markdown("## ⚡ 多空・當沖決策")
+    cols=st.columns(3)
+    for col,(label,sig,reason) in zip(cols,items):
+        color=_v164_color(sig)
+        col.markdown(f"""<div style="border:1px solid {color};border-radius:14px;padding:14px;
+        background:rgba(8,20,35,.78);min-height:116px">
+        <div style="font-size:.78rem;opacity:.72">{label}</div>
+        <div style="font-size:1.28rem;font-weight:850;color:{color};margin:7px 0">{sig}</div>
+        <div style="font-size:.78rem;opacity:.78">{reason}</div></div>""",unsafe_allow_html=True)
+    st.markdown(f"""<div style="margin-top:8px;padding:10px 12px;border-radius:10px;
+    background:rgba(255,255,255,.035);font-size:.82rem">
+    <b>當沖觸發：</b>{r['day_condition']}<br>
+    <b>當沖失效：</b>{r['day_invalid']}
+    </div>""",unsafe_allow_html=True)
+    st.caption("以上為模型條件訊號；當沖與放空需另確認個股交易資格、借券/融券與即時流動性。")
+
+# Render V16.4 panel after all definitions, using existing app variables.
+try:
+    _v164_df = price
+except Exception:
+    try: _v164_df = df
+    except Exception: _v164_df = None
+try:
+    _v164_q = realtime_quote(sid)
+except Exception:
+    _v164_q = {}
+try: _v164_p1 = _v10_p1
+except Exception: _v164_p1 = None
+try: _v164_p5 = _v10_p5
+except Exception: _v164_p5 = None
+try: _v164_inst = inst_score
+except Exception: _v164_inst = 0
+
+_v164_panel(_v164_df,_v164_q,_v164_p1,_v164_p5,_v164_inst)
 
