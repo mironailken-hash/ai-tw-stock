@@ -739,95 +739,102 @@ def _v10_features(df):
     x["y5"]=(c.shift(-5)>c).astype(float)
     return x
 
-def _v10_walk_forward_probability(df, horizon=1):
-    """Out-of-sample walk-forward logistic probability + calibration diagnostics."""
-    if not SKLEARN_OK:
-        return None
-    d=_v10_features(df)
-    feats=["f_ret1","f_ret5","f_ret20","f_ma5","f_ma20","f_vol20","f_range","f_volratio"]
-    target="y1" if horizon==1 else "y5"
-    d=d.dropna(subset=feats).reset_index(drop=True)
-    if len(d) < 260:
-        return None
-
-    # Last horizon rows have unknown future outcome and are prediction-only.
-    train=d.iloc[:-horizon].copy()
-    if len(train) < 250 or train[target].nunique()<2:
-        return None
-
-    # Walk-forward validation: no future rows may enter an earlier fit.
-    start=max(180, int(len(train)*0.55))
-    probs=[]; actual=[]
-    step=max(10, min(20, (len(train)-start)//8 if len(train)>start else 10))
-    for end in range(start, len(train), step):
-        tr=train.iloc[:end]
-        te=train.iloc[end:min(end+step,len(train))]
-        if len(te)==0 or tr[target].nunique()<2:
-            continue
-        model=Pipeline([
-            ("scale",StandardScaler()),
-            ("lr",LogisticRegression(max_iter=1000, class_weight="balanced"))
-        ])
-        model.fit(tr[feats],tr[target].astype(int))
-        probs.extend(model.predict_proba(te[feats])[:,1].tolist())
-        actual.extend(te[target].astype(int).tolist())
-
-    if len(actual) < 50:
-        return None
-
-    final=Pipeline([
-        ("scale",StandardScaler()),
-        ("lr",LogisticRegression(max_iter=1000, class_weight="balanced"))
-    ])
-    final.fit(train[feats],train[target].astype(int))
-    latest=d.iloc[[-1]]
-    p=float(final.predict_proba(latest[feats])[:,1][0])
-
-    brier=float(brier_score_loss(actual,probs))
-    # Simple reliability gap across broad probability bins.
-    bins=pd.cut(pd.Series(probs), bins=[0,.4,.5,.6,1], include_lowest=True)
-    cal=pd.DataFrame({"bin":bins,"p":probs,"y":actual}).groupby("bin",observed=True).agg(
-        predicted=("p","mean"), actual=("y","mean"), n=("y","size")
-    )
-    valid=cal[cal["n"]>=10]
-    gap=float((valid["predicted"]-valid["actual"]).abs().mul(valid["n"]).sum()/valid["n"].sum()) if len(valid) else np.nan
-    status="良好" if (brier<=0.23 and (pd.isna(gap) or gap<=0.10)) else ("普通" if brier<=0.26 else "不足")
-    return {
-        "prob":p, "n":len(actual), "brier":brier,
-        "cal_gap":gap, "status":status,
-        "period_start":str(train["date"].iloc[0])[:10],
-        "period_end":str(train["date"].iloc[-1])[:10],
-        "horizon":horizon
-    }
+def _v10_walk_forward_probability(df,horizon=1):
+    diag={"raw_rows":0,"feature_rows":0,"train_rows":0,"oos_rows":0,"reason":""}
+    try:
+        diag["raw_rows"]=0 if df is None else len(df)
+        if not SKLEARN_OK:
+            diag["reason"]="scikit-learn 未載入"
+            return None,diag
+        z=_v10_features(df)
+        diag["feature_rows"]=len(z)
+        if len(z)<260:
+            diag["reason"]=f"有效模型樣本僅 {len(z)} 筆，需要至少 260 筆"
+            return None,diag
+        target="y1" if horizon==1 else "y5"
+        feats=["ret1","ret5","ret20","px_ma5","px_ma20","vol20","range1","vol_ratio"]
+        train=z.iloc[:-horizon].dropna(subset=feats+[target]).copy()
+        diag["train_rows"]=len(train)
+        if len(train)<240:
+            diag["reason"]=f"可訓練樣本僅 {len(train)} 筆，需要至少 240 筆"
+            return None,diag
+        start_i=max(180,int(len(train)*0.55))
+        step=10 if len(train)<700 else 20
+        probs=[]; actual=[]
+        for i in range(start_i,len(train),step):
+            tr=train.iloc[:i]
+            te=train.iloc[i:min(i+step,len(train))]
+            if len(te)==0 or tr[target].nunique()<2: continue
+            model=Pipeline([("scaler",StandardScaler()),
+                            ("lr",LogisticRegression(max_iter=1000,class_weight="balanced"))])
+            model.fit(tr[feats],tr[target])
+            probs.extend(model.predict_proba(te[feats])[:,1].tolist())
+            actual.extend(te[target].astype(int).tolist())
+        diag["oos_rows"]=len(actual)
+        if len(actual)<50:
+            diag["reason"]=f"Walk-forward 驗證僅 {len(actual)} 筆，需要至少 50 筆"
+            return None,diag
+        final=Pipeline([("scaler",StandardScaler()),
+                        ("lr",LogisticRegression(max_iter=1000,class_weight="balanced"))])
+        final.fit(train[feats],train[target])
+        latest=z.iloc[[-1]][feats]
+        prob=float(final.predict_proba(latest)[:,1][0])
+        brier=float(brier_score_loss(actual,probs))
+        bins=[0,.4,.5,.6,1.000001]
+        gaps=[]; weights=[]
+        pa=np.asarray(probs); ya=np.asarray(actual)
+        for lo,hi in zip(bins[:-1],bins[1:]):
+            mask=(pa>=lo)&(pa<hi)
+            if mask.sum()>=10:
+                gaps.append(abs(float(pa[mask].mean())-float(ya[mask].mean())))
+                weights.append(int(mask.sum()))
+        gap=float(np.average(gaps,weights=weights)) if gaps else np.nan
+        if brier<=.23 and (np.isnan(gap) or gap<=.10): status="良好"
+        elif brier<=.26: status="普通"
+        else: status="不足"
+        diag["reason"]="模型驗證完成"
+        result={"prob":prob,"n":len(actual),"brier":brier,"gap":gap,"status":status,
+                "period_start":str(train["date"].iloc[0])[:10] if "date" in train else "",
+                "period_end":str(train["date"].iloc[-1])[:10] if "date" in train else ""}
+        return result,diag
+    except Exception as e:
+        diag["reason"]=f"模型計算失敗：{type(e).__name__}"
+        return None,diag
 
 def _v10_probability_panel(df):
-    """Render only probabilities that passed minimum out-of-sample validation."""
-    r1=_v10_walk_forward_probability(df,1)
-    r5=_v10_walk_forward_probability(df,5)
-    st.markdown("## AI 真實機率｜V13")
-    st.caption("機率來自歷史日線的時間序列走步驗證；技術、法人、風險等內部分數不會被當成機率。V13 同時保存實際上線預測，之後用真實結果驗證。")
+    st.markdown("## AI 真實機率｜V13.6")
+    st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
+    r1,d1=_v10_walk_forward_probability(df,1)
+    r5,d5=_v10_walk_forward_probability(df,5)
     c1,c2=st.columns(2)
     with c1:
+        st.caption("下一交易日上漲機率")
         if r1:
-            st.metric("下一交易日上漲機率", f"{r1['prob']*100:.1f}%")
-            st.caption(f"樣本 {r1['n']}｜Brier {r1['brier']:.3f}｜校準狀態：{r1['status']}")
+            st.markdown(f"### {r1['prob']*100:.1f}%")
+            st.caption(f"驗證樣本 {r1['n']}｜Brier {r1['brier']:.3f}｜校準狀態 {r1['status']}")
         else:
-            st.metric("下一交易日上漲機率","資料不足")
-            st.caption("歷史樣本或驗證資料不足，不提供百分比。")
+            st.markdown("### 資料不足")
+            st.caption(d1["reason"])
     with c2:
+        st.caption("5日上漲機率")
         if r5:
-            st.metric("未來第5交易日高於目前收盤機率", f"{r5['prob']*100:.1f}%")
-            st.caption(f"樣本 {r5['n']}｜Brier {r5['brier']:.3f}｜校準狀態：{r5['status']}")
+            st.markdown(f"### {r5['prob']*100:.1f}%")
+            st.caption(f"驗證樣本 {r5['n']}｜Brier {r5['brier']:.3f}｜校準狀態 {r5['status']}")
         else:
-            st.metric("5日上漲機率","資料不足")
-            st.caption("歷史樣本或驗證資料不足，不提供百分比。")
-    if r1 or r5:
-        st.caption("這是統計模型的條件機率估計，不代表保證結果；市場結構改變時，歷史校準可能失效。")
+            st.markdown("### 資料不足")
+            st.caption(d5["reason"])
+    st.markdown("#### 模型資料診斷")
+    dx1,dx2,dx3,dx4=st.columns(4)
+    dx1.metric("歷史交易日", d1["raw_rows"])
+    dx2.metric("有效特徵樣本", d1["feature_rows"])
+    dx3.metric("可訓練樣本", d1["train_rows"])
+    dx4.metric("Walk-forward驗證", d1["oos_rows"])
+    if r1 is None or r5 is None:
+        st.warning(f"明日模型：{d1['reason']}｜5日模型：{d5['reason']}")
+    else:
+        st.success("歷史樣本與 Walk-forward 驗證均已通過。")
+    st.caption("這些是統計模型的條件機率估計，不保證未來結果；市場結構改變時，歷史校準可能失效。")
     return r1,r5
-
-
-# ========================= V13 SUPER ENGINE =========================
-V13_LEDGER_PATH="/tmp/ken_ai_v13_predictions.json"
 
 def _v13_load_ledger():
     try:
@@ -1642,7 +1649,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.5 百億超級決策引擎
+    AI ACTION CENTER｜V13.6 百億超級決策引擎
     </div>
   <div class="decision-grid">
     <div>
