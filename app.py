@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15.6 個股15日新聞版
+    AI ACTION CENTER｜V15.6.1 新聞修正版
     </div>
   <div class="decision-grid">
     <div>
@@ -1844,14 +1844,6 @@ def _v143_live_quote_fragment(stock_id):
 _v143_live_quote_fragment(sid)
 
 
-try:
-    _v156_name = stock_name
-except Exception:
-    try:
-        _v156_name = name
-    except Exception:
-        _v156_name = ""
-_v156_render_stock_news(sid, _v156_name)
 
 
 # 即時價格可盤中刷新；日線真機率模型仍使用已完成日線，避免把跳動報價冒充重新校準的機率。
@@ -2241,3 +2233,13 @@ def _v156_render_stock_news(stock_id, stock_name):
         </div>""",unsafe_allow_html=True)
 
 
+
+# ===== V15.6.1：個股近15日新聞（函式定義後再執行） =====
+try:
+    _v156_name = stock_name
+except Exception:
+    try:
+        _v156_name = name
+    except Exception:
+        _v156_name = ""
+_v156_render_stock_news(sid, _v156_name)
