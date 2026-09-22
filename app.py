@@ -896,7 +896,7 @@ def _v13_settle_ledger(sid, price_df):
 
 def _v13_accuracy_panel(sid):
     rows=[x for x in _v13_load_ledger() if str(x.get("stock"))==str(sid)]
-    st.markdown("## AI 實戰驗證｜V14.4")
+    st.markdown("## AI 實戰驗證｜V14.5")
     settled1=[x for x in rows if x.get("p1") is not None and x.get("y1") is not None]
     settled5=[x for x in rows if x.get("p5") is not None and x.get("y5") is not None]
     c1,c2,c3=st.columns(3)
@@ -964,7 +964,7 @@ def _v14_unified_signal(regime, r1, r5, short_score=None, inst_score=None):
 
 def _v14_validation_panel(r1,r5):
     health,reason=_v14_model_health(r1,r5)
-    st.markdown("## 模型自我驗證｜V14.4")
+    st.markdown("## 模型自我驗證｜V14.5")
     a,b,c=st.columns(3)
     a.metric("模型健康度",health)
     a.caption(reason)
@@ -1689,7 +1689,10 @@ def _v143_live_quote_fragment(stock_id):
             # already-loaded latest completed daily close without rerunning the page.
             if pd.isna(prev):
                 try:
-                    prev = float(price["close"].iloc[-2]) if len(price) >= 2 else np.nan
+                    # Historical table contains completed daily bars. Use its latest
+                    # completed close as fallback; do not assume the penultimate row is yesterday.
+                    _hist_close = pd.to_numeric(price["close"], errors="coerce").dropna()
+                    prev = float(_hist_close.iloc[-1]) if len(_hist_close) else np.nan
                 except Exception:
                     prev = np.nan
             chg=(px-float(prev)) if pd.notna(prev) else np.nan
@@ -1763,10 +1766,10 @@ if not _v9_has_live:
     </div>
     """,unsafe_allow_html=True)
 
-# ===== V13 機率誠信規則 =====
+# ===== V14.5 模型誠信規則 =====
 st.markdown(f"""
 <div class="v9-prob-rule">
- <b>V13 機率誠信規則</b>｜畫面中的「%」目前只保留實際市場百分比資料；未完成歷史回測與校準的 AI 預測不顯示 %。
+ <b>V14.5 模型誠信規則</b>｜畫面中的「%」目前只保留實際市場百分比資料；未完成歷史回測與校準的模型判讀不顯示為機率 %。
  技術、法人、風險、資料完整度等內部模型因素不再以百分比冒充機率。
  <br><span>技術、法人、市場、風險、趨勢及 Beta 預測一律只顯示文字狀態；完成歷史回測與機率校準後，才啟用 AI 機率百分比。</span>
 </div>
@@ -1801,7 +1804,7 @@ st.markdown(f"""
  <div class="v7-event-title">{_event_icon} {_v7_event["risk"]}</div>
  <div class="v6-meta">已掃描台灣/國際新聞；與個股或重大市場事件相關 {_v7_event["related"]} 則｜
  事件偏多指標 {_v7_event["positive"]}｜偏空指標 {_v7_event["negative"]}</div>
- <div class="v7-beta">未來波段上漲預估機率（Beta） {_v8_swing_up_txt}｜盤中空方風險 {_v8_swing_down_txt}</div>
+ <div class="v7-beta">波段方向判讀 {_v8_swing_up_txt}｜盤中空方風險 {_v8_swing_down_txt}</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1821,7 +1824,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V14.4 自我驗證決策系統
+    AI ACTION CENTER｜V14.5 自我驗證決策系統
     </div>
   <div class="decision-grid">
     <div>
@@ -1907,7 +1910,7 @@ v1311_invalidation_text = (
     else "尚未形成有效失效價"
 )
 
-st.markdown("## V14.4 統一決策中心")
+st.markdown("## V14.5 統一決策中心")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
