@@ -749,12 +749,12 @@ def _v10_walk_forward_probability(df,horizon=1):
             diag["reason"]="scikit-learn 未載入" + (f"｜{SKLEARN_IMPORT_ERROR}" if SKLEARN_IMPORT_ERROR else "")
             return None,diag
         z=_v10_features(df)
-        diag["feature_rows"]=len(z)
-        if len(z)<260:
-            diag["reason"]=f"有效模型樣本僅 {len(z)} 筆，需要至少 260 筆"
-            return None,diag
         target="y1" if horizon==1 else "y5"
-        feats=["ret1","ret5","ret20","px_ma5","px_ma20","vol20","range1","vol_ratio"]
+        feats=["f_ret1","f_ret5","f_ret20","f_ma5","f_ma20","f_vol20","f_range","f_volratio"]
+        diag["feature_rows"]=len(z.dropna(subset=feats))
+        if diag["feature_rows"]<260:
+            diag["reason"]=f"有效模型樣本僅 {diag['feature_rows']} 筆，需要至少 260 筆"
+            return None,diag
         train=z.iloc[:-horizon].dropna(subset=feats+[target]).copy()
         diag["train_rows"]=len(train)
         if len(train)<240:
@@ -804,7 +804,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 真實機率｜V13.7")
+    st.markdown("## AI 真實機率｜V13.8")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1651,7 +1651,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.7 百億超級決策引擎
+    AI ACTION CENTER｜V13.8 百億超級決策引擎
     </div>
   <div class="decision-grid">
     <div>
