@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V15.7")
+    st.markdown("## AI 條件機率｜V15.8")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15.7 專業新聞情報版
+    AI ACTION CENTER｜V15.8 六大新聞來源版
     </div>
   <div class="decision-grid">
     <div>
@@ -2354,12 +2354,140 @@ def _v157_render_news(stock_id, stock_name):
         )
 
 # V15.7 新聞區：函式皆已定義後才執行，避免 NameError
+
+
+# ===== V15.8：六大新聞來源分類 =====
+_V158_CATEGORIES = [
+    "官方重大訊息", "專業財經", "財經新聞",
+    "市場資訊", "券商研究", "一般媒體"
+]
+
+def _v158_category(title, source):
+    text = f"{title} {source}".lower()
+
+    official = ["公開資訊觀測站","mops","證交所","twse","櫃買中心","tpex",
+                "重大訊息","公司公告"]
+    brokers = ["凱基","群益","元大","富邦證券","國泰證券","永豐","統一證券",
+               "兆豐證券","玉山證券","中信證券","券商","投顧","研究報告"]
+    professional = ["經濟日報","工商時報","moneydj","鉅亨","anue","中央社",
+                    "財訊","今周刊","商業周刊"]
+    finance_news = ["yahoo奇摩股市","yahoo股市","自由財經","聯合財經",
+                    "ettoday財經","壹蘋財經","鏡週刊財經"]
+    general_media = ["tvbs","東森","三立","中時","自由時報","聯合新聞網",
+                     "ettoday","民視","華視","台視"]
+    market_terms = ["盤中","盤勢","法人","三大法人","成交量","籌碼","外資",
+                    "投信","股價","個股","漲停","跌停","市場","類股","族群"]
+
+    if any(k.lower() in text for k in official):
+        return "官方重大訊息"
+    if any(k.lower() in text for k in brokers):
+        return "券商研究"
+    if any(k.lower() in text for k in professional):
+        return "專業財經"
+    if any(k.lower() in text for k in finance_news):
+        return "財經新聞"
+    if any(k.lower() in text for k in general_media):
+        return "一般媒體"
+    if any(k.lower() in text for k in market_terms):
+        return "市場資訊"
+    # 無法辨識但仍與個股直接相關者，歸一般媒體，避免漏新聞
+    return "一般媒體"
+
+def _v158_prepare(stock_id, stock_name):
+    # 多抓一些，分類後最多保留 30 則
+    base = _v156_stock_news(stock_id, stock_name, days=15, limit=40)
+    if base is None or base.empty:
+        return pd.DataFrame(columns=["日期","分類","重要度","情緒","標題","來源","連結"])
+
+    rows, seen = [], set()
+    for _, r in base.iterrows():
+        title = str(r.get("標題","")).strip()
+        source = str(r.get("來源","")).strip()
+        key = _v157_normalize_title(title)
+        short = key[:42]
+        if not short or short in seen:
+            continue
+        seen.add(short)
+
+        cat = _v158_category(title, source)
+        stars, _ = _v157_news_priority(title, source)
+        # 官方重大訊息至少五星；券商/專業財經至少四星
+        if cat == "官方重大訊息":
+            stars = 5
+        elif cat in ("券商研究","專業財經"):
+            stars = max(4, stars)
+
+        rows.append({
+            "日期": r.get("日期",""),
+            "分類": cat,
+            "重要度": int(stars),
+            "情緒": _v157_sentiment(title),
+            "標題": title,
+            "來源": source or "Google News",
+            "連結": r.get("連結",""),
+        })
+
+    if not rows:
+        return pd.DataFrame(columns=["日期","分類","重要度","情緒","標題","來源","連結"])
+    return pd.DataFrame(rows).head(30)
+
+def _v158_render(stock_id, stock_name):
+    news = _v158_prepare(stock_id, stock_name)
+    total = len(news)
+
+    st.markdown(f"## 📰 {stock_id} {stock_name}｜近 15 日新聞情報")
+    st.caption("固定檢視六大類別｜重要度與標題情緒分開呈現｜新聞不直接修改 AI 條件機率")
+
+    counts = {c: int((news["分類"] == c).sum()) if not news.empty else 0 for c in _V158_CATEGORIES}
+
+    # 六類永遠顯示，手機會由 V15.5 CSS 自動直向排列
+    r1 = st.columns(3)
+    for col, cat in zip(r1, _V158_CATEGORIES[:3]):
+        col.metric(cat, f"{counts[cat]} 則")
+    r2 = st.columns(3)
+    for col, cat in zip(r2, _V158_CATEGORIES[3:]):
+        col.metric(cat, f"{counts[cat]} 則")
+
+    st.caption(f"近 15 日共整理 {total} 則與此個股直接相關的公開新聞。")
+
+    if news.empty:
+        st.info("目前沒有取得近 15 日直接相關新聞，或新聞來源暫時無法連線。")
+        return
+
+    # 官方重大訊息優先，其餘固定依六大分類顯示。
+    for cat in _V158_CATEGORIES:
+        part = news[news["分類"] == cat].copy()
+        with st.expander(f"{cat}｜{len(part)} 則", expanded=(cat == "官方重大訊息" and len(part) > 0)):
+            if part.empty:
+                st.caption("近 15 日目前未取得此分類的相關新聞。")
+                continue
+
+            part = part.sort_values(["重要度","日期"], ascending=[False,False])
+            for _, r in part.iterrows():
+                stars = "★" * int(r["重要度"]) + "☆" * (5-int(r["重要度"]))
+                icon = {"偏多":"🟢","中性":"⚪","偏空":"🔴"}.get(r["情緒"],"⚪")
+                st.markdown(
+                    f"""<div style="padding:10px 12px;margin:7px 0;
+                    border:1px solid rgba(212,175,55,.28);border-radius:12px;
+                    background:rgba(8,25,40,.72)">
+                    <div style="font-size:.76rem;opacity:.76">
+                    {r['日期']} ｜ {icon} {r['情緒']} ｜ {r['來源']}
+                    </div>
+                    <div style="color:#e9c54d;font-size:.80rem;margin-top:3px">{stars}</div>
+                    <div style="font-weight:720;margin-top:4px;line-height:1.45">{r['標題']}</div>
+                    <div style="margin-top:5px"><a href="{r['連結']}" target="_blank"
+                    style="color:#e5bd42;text-decoration:none">查看原文 ↗</a></div>
+                    </div>""",
+                    unsafe_allow_html=True
+                )
+
+# 函式全部定義完成後才執行，避免前版 NameError
 try:
-    _v157_name = stock_name
+    _v158_name = stock_name
 except Exception:
     try:
-        _v157_name = name
+        _v158_name = name
     except Exception:
-        _v157_name = ""
-_v157_render_news(sid, _v157_name)
+        _v158_name = ""
+_v158_render(sid, _v158_name)
 
