@@ -1345,7 +1345,7 @@ shares = st.session_state.get("active_shares_v48", shares)
 # 開盤中每 8 秒自動刷新；使用者不需要重按搜尋
 _market_open, _tw_now = market_is_open_tw()
 if _market_open:
-    st.markdown('<meta http-equiv="refresh" content="10">', unsafe_allow_html=True)
+    st.markdown('', unsafe_allow_html=True)
 
 sid,name=resolve_stock(q)
 
@@ -1550,7 +1550,7 @@ else:
 
 # ===== V13.9 最上方：即時價格 + AI 當沖雷達 =====
 # 即時價格可盤中刷新；日線真機率模型仍使用已完成日線，避免把跳動報價冒充重新校準的機率。
-rt_state = "🟢 盤中最新行情・約10秒自動更新" if _market_open and rt and pd.notna(rt_price) else "⚪ 非開盤時段／最新取得資料"
+rt_state = "🟢 盤中最新行情" if _market_open and rt and pd.notna(rt_price) else "⚪ 非開盤時段／最新取得資料"
 price_source = "TWSE MIS 盤中行情" if (_market_open and rt and pd.notna(rt_price)) else data_mode
 update_text = data_time if data_time else (_tw_now.strftime("%Y-%m-%d %H:%M:%S") if _tw_now else "")
 _rt_open = rt.get("open", np.nan) if rt else np.nan
@@ -1662,7 +1662,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.13 百億即時行情決策引擎
+    AI ACTION CENTER｜V13.14 局部即時行情決策引擎
     </div>
   <div class="decision-grid">
     <div>
@@ -1743,7 +1743,7 @@ v1311_invalidation_text = (
     else "尚未形成有效失效價"
 )
 
-st.markdown("## V13.13 決策摘要")
+st.markdown("## V13.14 決策摘要")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
