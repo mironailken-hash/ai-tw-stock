@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import requests
+import re
+import json
+import osquests
 import plotly.graph_objects as go
 try:
     from sklearn.linear_model import LogisticRegression
@@ -754,8 +756,8 @@ def _v10_probability_panel(df):
     """Render only probabilities that passed minimum out-of-sample validation."""
     r1=_v10_walk_forward_probability(df,1)
     r5=_v10_walk_forward_probability(df,5)
-    st.markdown("## AI 真實機率｜V10")
-    st.caption("機率來自歷史日線的時間序列走步驗證；技術分數、法人分數與風險分數不會被當成機率。")
+    st.markdown("## AI 真實機率｜V13")
+    st.caption("機率來自歷史日線的時間序列走步驗證；技術、法人、風險等內部分數不會被當成機率。V13 同時保存實際上線預測，之後用真實結果驗證。")
     c1,c2=st.columns(2)
     with c1:
         if r1:
@@ -774,6 +776,121 @@ def _v10_probability_panel(df):
     if r1 or r5:
         st.caption("這是統計模型的條件機率估計，不代表保證結果；市場結構改變時，歷史校準可能失效。")
     return r1,r5
+
+
+# ========================= V13 SUPER ENGINE =========================
+V13_LEDGER_PATH="/tmp/ken_ai_v13_predictions.json"
+
+def _v13_load_ledger():
+    try:
+        if os.path.exists(V13_LEDGER_PATH):
+            with open(V13_LEDGER_PATH,"r",encoding="utf-8") as f:
+                x=json.load(f)
+                return x if isinstance(x,list) else []
+    except Exception:
+        pass
+    return []
+
+def _v13_save_ledger(rows):
+    try:
+        with open(V13_LEDGER_PATH,"w",encoding="utf-8") as f:
+            json.dump(rows[-3000:],f,ensure_ascii=False,indent=2)
+    except Exception:
+        pass
+
+def _v13_record_prediction(sid, name, price_df, r1, r5):
+    """Session ledger. Streamlit Cloud ephemeral storage may reset after redeploy/restart."""
+    if price_df is None or len(price_df)==0: return
+    d=str(price_df["date"].iloc[-1])[:10]
+    close=float(price_df["close"].iloc[-1])
+    ledger=_v13_load_ledger()
+    key=f"{sid}|{d}"
+    if any(x.get("key")==key for x in ledger): return
+    ledger.append({
+        "key":key,"stock":str(sid),"name":str(name),"date":d,"close":close,
+        "p1": None if not r1 else round(float(r1["prob"]),6),
+        "p5": None if not r5 else round(float(r5["prob"]),6),
+        "p1_status": None if not r1 else r1["status"],
+        "p5_status": None if not r5 else r5["status"],
+    })
+    _v13_save_ledger(ledger)
+
+def _v13_settle_ledger(sid, price_df):
+    if price_df is None or len(price_df)==0: return
+    px=price_df[["date","close"]].copy()
+    px["date"]=px["date"].astype(str).str[:10]
+    px["close"]=pd.to_numeric(px["close"],errors="coerce")
+    mp=dict(zip(px["date"],px["close"]))
+    dates=list(px["date"])
+    ledger=_v13_load_ledger()
+    changed=False
+    for row in ledger:
+        if str(row.get("stock"))!=str(sid): continue
+        d=row.get("date")
+        if d not in dates: continue
+        i=dates.index(d)
+        base=float(row.get("close",np.nan))
+        if row.get("p1") is not None and row.get("y1") is None and i+1<len(dates):
+            row["y1"]=int(float(px["close"].iloc[i+1])>base); changed=True
+        if row.get("p5") is not None and row.get("y5") is None and i+5<len(dates):
+            row["y5"]=int(float(px["close"].iloc[i+5])>base); changed=True
+    if changed: _v13_save_ledger(ledger)
+
+def _v13_accuracy_panel(sid):
+    rows=[x for x in _v13_load_ledger() if str(x.get("stock"))==str(sid)]
+    st.markdown("## AI 戰績｜V13")
+    settled1=[x for x in rows if x.get("p1") is not None and x.get("y1") is not None]
+    settled5=[x for x in rows if x.get("p5") is not None and x.get("y5") is not None]
+    c1,c2,c3=st.columns(3)
+    c1.metric("已保存預測",len(rows))
+    c2.metric("明日已驗證",len(settled1))
+    c3.metric("5日已驗證",len(settled5))
+    if not settled1 and not settled5:
+        st.caption("尚未累積足夠的實際預測結果。V13 不會用回測命中率冒充真實上線戰績。")
+        return
+    for label,data,pk,yk in [
+        ("明日模型",settled1,"p1","y1"),("5日模型",settled5,"p5","y5")]:
+        if len(data)>=10:
+            pred=np.array([float(x[pk]) for x in data])
+            y=np.array([int(x[yk]) for x in data])
+            hit=np.mean((pred>=.5)==y)
+            bs=np.mean((pred-y)**2)
+            st.write(f"**{label}**｜實際方向命中率 {hit*100:.1f}%｜Brier {bs:.3f}｜樣本 {len(data)}")
+        elif data:
+            st.write(f"**{label}**｜已驗證 {len(data)} 筆；未滿 10 筆，不顯示命中率。")
+
+def _v13_market_regime(price_df, inst_df=None):
+    """Transparent regime label; not a probability."""
+    try:
+        c=price_df["close"].astype(float)
+        r5=c.pct_change(5).iloc[-1]
+        r20=c.pct_change(20).iloc[-1]
+        vol=c.pct_change().rolling(20).std().iloc[-1]
+        score=0
+        score += 1 if r5>0 else -1
+        score += 1 if r20>0 else -1
+        score += -1 if vol>0.035 else 0
+        if score>=2: return "偏多"
+        if score<=-2: return "偏空"
+        return "震盪"
+    except Exception:
+        return "資料不足"
+
+def _v13_trade_plan(current, support, resistance, regime, r1, r5):
+    """No fake probability; creates a transparent conditional plan."""
+    try:
+        p1=None if not r1 else float(r1["prob"])
+        p5=None if not r5 else float(r5["prob"])
+        if p1 is not None and p5 is not None and p1>=.58 and p5>=.58 and regime!="偏空":
+            signal="等待偏多條件"
+        elif p1 is not None and p5 is not None and p1<=.42 and p5<=.42:
+            signal="風險偏高"
+        else:
+            signal="觀望"
+        invalid=float(support)*0.985 if pd.notna(support) else np.nan
+        return signal, invalid
+    except Exception:
+        return "觀望", np.nan
 
 def v9_market_session():
     """台灣股市時段：直接以 Unix time 加 UTC+8 計算。"""
@@ -1408,10 +1525,10 @@ if not _v9_has_live:
     </div>
     """,unsafe_allow_html=True)
 
-# ===== V9.7 機率誠信規則 =====
+# ===== V13 機率誠信規則 =====
 st.markdown("""
 <div class="v9-prob-rule">
- <b>V9.7 機率誠信規則</b>｜畫面中的「%」目前只保留實際市場百分比資料；未完成歷史回測與校準的 AI 預測不顯示 %。
+ <b>V13 機率誠信規則</b>｜畫面中的「%」目前只保留實際市場百分比資料；未完成歷史回測與校準的 AI 預測不顯示 %。
  技術、法人、風險、資料完整度等內部模型因素不再以百分比冒充機率。
  <br><span>技術、法人、市場、風險、趨勢及 Beta 預測一律只顯示文字狀態；完成歷史回測與機率校準後，才啟用 AI 機率百分比。</span>
 </div>
@@ -1466,7 +1583,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V10 百億真實機率引擎
+    AI ACTION CENTER｜V13 百億超級決策引擎
     </div>
   <div class="decision-grid">
     <div>
@@ -1504,6 +1621,22 @@ for col,title,score,period in zip([c1,c2,c3],["短線","中線","長線"],[short
         <div class="gold" style="font-size:22px;font-weight:900">趨勢狀態｜{lab}</div></div>""",unsafe_allow_html=True)
 
 _v10_p1,_v10_p5=_v10_probability_panel(price)
+_v13_settle_ledger(sid,price)
+_v13_record_prediction(sid,name,price,_v10_p1,_v10_p5)
+_v13_regime=_v13_market_regime(price,inst if "inst" in globals() else None)
+try:
+    _v13_signal,_v13_invalid=_v13_trade_plan(current,support,resistance,_v13_regime,_v10_p1,_v10_p5)
+except Exception:
+    _v13_signal,_v13_invalid="觀望",np.nan
+
+st.markdown("## V13 決策摘要")
+_v13a,_v13b,_v13c=st.columns(3)
+_v13a.metric("市場狀態",_v13_regime)
+_v13b.metric("模型訊號",_v13_signal)
+_v13c.metric("模型失效參考", f"{_v13_invalid:.2f}" if pd.notna(_v13_invalid) else "資料不足")
+st.caption("模型訊號是條件式決策輔助，不代表保證買賣結果；失效參考用於辨識原判斷何時不再成立。")
+_v13_accuracy_panel(sid)
+
 
 st.markdown("### 關鍵價位")
 a,b,c,e=st.columns(4)
