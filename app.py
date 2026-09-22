@@ -1678,69 +1678,29 @@ def _v141_live_quote_component(stock_id, height=150):
 
 
 
-# V15：把「是否可買」做成最醒目的核心決策。
-# 台股慣例：紅色＝偏多／買進；綠色＝偏空／減碼。
-try:
-    _v147_sig = str(_v14_unified_signal(
-        regime,
-        _v10_p1,
-        _v10_p5,
-        short_score,
-        inst_score
-    ) or "觀望")
-except Exception:
-    # Safe fallback: do not crash the page if one optional factor is unavailable.
-    _v147_sig = "觀望"
-if _v147_sig in ("偏多確認", "可買進"):
-    _v147_bg, _v147_border, _v147_color = "#4b1016", "#ff4d5e", "#fff5f6"
-    _v147_title = "可買進｜偏多確認"
-elif _v147_sig == "等待買進":
-    _v147_bg, _v147_border, _v147_color = "#4a2e08", "#ffb020", "#fff7e6"
-    _v147_title = "等待買進"
-elif _v147_sig in ("減碼警戒", "風險偏高", "賣出"):
-    _v147_bg, _v147_border, _v147_color = "#0d3829", "#2fd08a", "#effff8"
-    _v147_title = _v147_sig
-else:
-    _v147_bg, _v147_border, _v147_color = "#252a31", "#7d8794", "#f4f6f8"
-    _v147_title = "觀望"
-
-_v147_prob_parts = []
-try:
-    if isinstance(_v10_p1, dict) and _v10_p1.get("prob") is not None:
-        _v147_prob_parts.append(f"次日上漲條件機率 {float(_v10_p1['prob'])*100:.1f}%")
-except Exception:
-    pass
-try:
-    if isinstance(_v10_p5, dict) and _v10_p5.get("prob") is not None:
-        _v147_prob_parts.append(f"5日上漲條件機率 {float(_v10_p5['prob'])*100:.1f}%")
-except Exception:
-    pass
-
-_v147_prob_text = "　｜　".join(_v147_prob_parts)
-st.markdown(
-    f"""
-    <div style="
-        background:{_v147_bg};
-        border:2px solid {_v147_border};
-        border-radius:18px;
-        padding:18px 22px;
-        margin:10px 0 18px 0;
-        box-shadow:0 0 26px rgba(0,0,0,.25);
-    ">
-      <div style="font-size:13px;letter-spacing:1.6px;color:{_v147_border};font-weight:900;">
-        AI 核心決策｜是否可買
-      </div>
-      <div style="font-size:32px;line-height:1.25;color:{_v147_color};font-weight:950;margin-top:5px;">
-        {_v147_title}
-      </div>
-      <div style="font-size:14px;color:#d8dde5;margin-top:8px;">
-        {_v147_prob_text if _v147_prob_text else "依目前模型條件判讀"}
-      </div>
+# V15.2 唯一最終決策：與原 ACTION CENTER 使用完全相同結果
+st.markdown(f"""
+<div class="decision">
+  <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
+    color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
+    letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
+    AI ACTION CENTER｜V15.2 單一決策源修正版
     </div>
-    """,
-    unsafe_allow_html=True,
-)
-
+  <div class="decision-grid">
+    <div>
+      <div class="decision-status">{status}</div>
+      <div class="decision-note">{status_reason}</div>
+      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜條件確認 {confirmations}/4</div>
+    </div>
+    <div class="decision-score"><span style="font-size:22px">趨勢強度：</span>{short_label}</div>
+  </div>
+  <div class="level-grid">
+    <div class="levelbox"><div class="small">突破確認價</div><div class="level">{breakout:.2f}</div><div class="small">突破且量能同步增強，再重新確認進攻訊號</div></div>
+    <div class="levelbox"><div class="small">拉回觀察區</div><div class="level">{pull_lo:.2f} ～ {pull_hi:.2f}</div><div class="small">回測止穩且技術轉強，可形成另一種轉強劇本</div></div>
+    <div class="levelbox"><div class="small">轉弱警戒</div><div class="level">{weak:.2f}</div><div class="small">跌破後目前短線劇本失效，重新評估</div></div>
+  </div>
+</div>
+""",unsafe_allow_html=True)
 
 def _v143_live_quote_fragment(stock_id):
     """Only this fragment reruns every 10s; the rest of the Streamlit app stays put."""
@@ -1826,10 +1786,8 @@ if not _v9_has_live:
     </div>
     """,unsafe_allow_html=True)
 
-# ===== V14.5 模型誠信規則 =====
 st.markdown(f"""
 <div class="v9-prob-rule">
- <b>V14.5 模型誠信規則</b>｜畫面中的「%」目前只保留實際市場百分比資料；未完成歷史回測與校準的模型判讀不顯示為機率 %。
  技術、法人、風險、資料完整度等內部模型因素不再以百分比冒充機率。
  <br><span></span>
 </div>
@@ -1879,28 +1837,9 @@ if _v7_event["items"]:
                 st.markdown(f"- **[{_tone}]** {_x['title']}  `{_src}`")
         st.caption("新聞標題只作事件偵測與市場情緒輸入；重大事件仍應以公司、交易所、政府或可信媒體原始資訊確認。")
 
-st.markdown(f"""
-<div class="decision">
-  <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
-    color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
-    letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15.1 決策優先修正版
-    </div>
-  <div class="decision-grid">
-    <div>
-      <div class="decision-status">{status}</div>
-      <div class="decision-note">{status_reason}</div>
-      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜條件確認 {confirmations}/4</div>
-    </div>
-    <div class="decision-score"><span style="font-size:22px">趨勢強度：</span>{short_label}</div>
-  </div>
-  <div class="level-grid">
-    <div class="levelbox"><div class="small">突破確認價</div><div class="level">{breakout:.2f}</div><div class="small">突破且量能同步增強，再重新確認進攻訊號</div></div>
-    <div class="levelbox"><div class="small">拉回觀察區</div><div class="level">{pull_lo:.2f} ～ {pull_hi:.2f}</div><div class="small">回測止穩且技術轉強，可形成另一種轉強劇本</div></div>
-    <div class="levelbox"><div class="small">轉弱警戒</div><div class="level">{weak:.2f}</div><div class="small">跌破後目前短線劇本失效，重新評估</div></div>
-  </div>
-</div>
-""",unsafe_allow_html=True)
+
+# V15.2: ACTION CENTER moved to top; original duplicate removed.
+
 
 st.markdown(f"""
 <div class="panel">
@@ -1971,7 +1910,7 @@ v1311_invalidation_text = (
 )
 
 
-st.markdown("## V15.1 統一決策中心")
+st.markdown("## V15.2 統一決策中心")
 
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
