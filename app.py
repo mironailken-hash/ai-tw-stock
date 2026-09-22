@@ -896,7 +896,7 @@ def _v13_settle_ledger(sid, price_df):
 
 def _v13_accuracy_panel(sid):
     rows=[x for x in _v13_load_ledger() if str(x.get("stock"))==str(sid)]
-    st.markdown("## AI 實戰驗證｜V14.3")
+    st.markdown("## AI 實戰驗證｜V14.4")
     settled1=[x for x in rows if x.get("p1") is not None and x.get("y1") is not None]
     settled5=[x for x in rows if x.get("p5") is not None and x.get("y5") is not None]
     c1,c2,c3=st.columns(3)
@@ -964,7 +964,7 @@ def _v14_unified_signal(regime, r1, r5, short_score=None, inst_score=None):
 
 def _v14_validation_panel(r1,r5):
     health,reason=_v14_model_health(r1,r5)
-    st.markdown("## 模型自我驗證｜V14.3")
+    st.markdown("## 模型自我驗證｜V14.4")
     a,b,c=st.columns(3)
     a.metric("模型健康度",health)
     a.caption(reason)
@@ -1685,6 +1685,13 @@ def _v143_live_quote_fragment(stock_id):
         if q and pd.notna(q.get("price", np.nan)):
             px=float(q["price"])
             prev=q.get("prev_close", np.nan)
+            # MIS may omit prev_close in some responses. Fall back to the
+            # already-loaded latest completed daily close without rerunning the page.
+            if pd.isna(prev):
+                try:
+                    prev = float(price["close"].iloc[-2]) if len(price) >= 2 else np.nan
+                except Exception:
+                    prev = np.nan
             chg=(px-float(prev)) if pd.notna(prev) else np.nan
             pct=(chg/float(prev)*100) if pd.notna(prev) and float(prev)!=0 else np.nan
             arrow="▲" if pd.notna(chg) and chg>0 else ("▼" if pd.notna(chg) and chg<0 else "")
@@ -1732,29 +1739,13 @@ def _v139_fmt(v, digits=2):
         return "—"
 _rt_ohlv = f"開 {_v139_fmt(_rt_open)}　高 {_v139_fmt(_rt_high)}　低 {_v139_fmt(_rt_low)}　量 {_v139_fmt(_rt_vol,0)}"
 
-st.markdown(f"""
-<div class="v6-live-grid">
-  <div class="v6-live-card">
-    <div class="kicker">SNAPSHOT PRICE｜分析時價格</div>
-    <div class="v6-price">{close:.2f}</div>
-    <div class="v6-change {'up' if chg>=0 else 'down'}">{chg:+.2f}%</div>
-    <div class="v6-meta">{rt_state}<br>{_rt_ohlv}<br>{price_source}｜更新 {update_text}</div>
-  </div>
-  <div class="v6-live-card">
-    <div class="kicker">INTRADAY RADAR｜盤中趨勢雷達</div>
-    <div class="v6-dt">{dt_signal}</div>
-    <div class="v7-prob">{_v9_intraday_title}上漲預估機率（Beta） <b>{_v9_intraday_up}</b>　｜　盤中空方風險 <b>{_v9_intraday_down}</b></div>
-    <div class="v6-score">方向：{dt_direction}｜資料狀態 {("完整" if _v7_completeness>=0.85 else ("部分缺失" if _v7_completeness>=0.55 else "不足"))}</div>
-    <div class="v6-meta">{dt_reason}<br>盤中防守：{dt_def:.2f}｜壓力：{dt_res:.2f}</div>
-  </div>
-</div>
-""", unsafe_allow_html=True)
+st.caption("分析基準價已整合至上方 LIVE PRICE；下方模型使用本次分析資料，不會因局部報價更新而整頁重算。")
 
 
 
 st.markdown("""
 <div class="v7-prob-legend">
-<b>機率顯示說明：</b> 本頁不再顯示「分數／100」。
+<b>盤中雷達說明：</b> 本頁不再顯示「分數／100」。
 AI 模型目前只顯示方向與狀態，不把模型分數包裝成機率；股價與實際漲跌幅仍維持市場原始單位。
 </div>
 """, unsafe_allow_html=True)
@@ -1830,7 +1821,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V14.3 自我驗證決策系統
+    AI ACTION CENTER｜V14.4 自我驗證決策系統
     </div>
   <div class="decision-grid">
     <div>
@@ -1916,7 +1907,7 @@ v1311_invalidation_text = (
     else "尚未形成有效失效價"
 )
 
-st.markdown("## V14.3 統一決策中心")
+st.markdown("## V14.4 統一決策中心")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
