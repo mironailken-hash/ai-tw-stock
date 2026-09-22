@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V16.0")
+    st.markdown("## AI 條件機率｜V16.1")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V16.0 多來源新聞引擎
+    AI ACTION CENTER｜V16.1 Yahoo直連＋多來源診斷版
     </div>
   <div class="decision-grid">
     <div>
@@ -2838,5 +2838,200 @@ try:
 except Exception:
     try: _v160_name=name
     except Exception: _v160_name=""
-_v160_render(sid,_v160_name)
+# V16.1 replaces V16.0 renderer
+
+
+# ===== V16.1：Yahoo 個股新聞直連 + Google RSS 備援 + 來源診斷 =====
+from html import unescape as _v161_unescape
+
+def _v161_clean_html(x):
+    x = re.sub(r"<[^>]+>", " ", str(x or ""))
+    return re.sub(r"\s+", " ", _v161_unescape(x)).strip()
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _v161_yahoo_direct(stock_id, days=15):
+    """直接讀 Yahoo 台股個股新聞頁，不經 Google News RSS。"""
+    sid = str(stock_id).strip()
+    urls = [
+        f"https://tw.stock.yahoo.com/quote/{sid}.TW/news",
+        f"https://tw.stock.yahoo.com/quote/{sid}/announcement",
+    ]
+    cutoff = pd.Timestamp.now(tz="Asia/Taipei") - pd.Timedelta(days=days)
+    rows, status = [], []
+    for url in urls:
+        try:
+            r = requests.get(url, timeout=12, headers={
+                "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+                "Accept-Language":"zh-TW,zh;q=0.9"
+            })
+            status.append(("Yahoo股市", r.status_code))
+            if r.status_code != 200:
+                continue
+            html = r.text
+
+            # Yahoo pages expose article URLs/titles in server-rendered HTML.
+            pats = re.findall(
+                r'<a[^>]+href="([^"]*(?:/news/|/quote/[^"]+/announcement)[^"]*)"[^>]*>(.*?)</a>',
+                html, flags=re.I|re.S
+            )
+            for href, inner in pats:
+                title = _v161_clean_html(inner)
+                if len(title) < 8:
+                    continue
+                if href.startswith("/"):
+                    href = "https://tw.stock.yahoo.com" + href
+                elif href.startswith("https://tw.news.yahoo.com"):
+                    pass
+                elif not href.startswith("http"):
+                    continue
+                rows.append({
+                    "標題": title, "來源":"Yahoo股市", "連結":href,
+                    "_dt":pd.Timestamp.now(tz="Asia/Taipei"), "_direct":True
+                })
+        except Exception as e:
+            status.append(("Yahoo股市", "ERR"))
+    return rows, status
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _v161_news_engine(stock_id, stock_name, days=15):
+    sid = str(stock_id or "").strip()
+    name = str(stock_name or "").strip()
+    pool, diag = [], []
+
+    # 1) Yahoo 直接來源
+    yr, ys = _v161_yahoo_direct(sid, days)
+    pool.extend(yr)
+    diag.extend(ys)
+
+    # 2) 原多來源 Google News RSS 當備援
+    try:
+        gd = _v160_multisource_news(sid, name, days)
+        if gd is not None and not gd.empty:
+            for _, r in gd.iterrows():
+                dt = r.get("_dt")
+                if dt is None or pd.isna(dt):
+                    dt = pd.Timestamp.now(tz="Asia/Taipei")
+                pool.append({
+                    "標題":r.get("標題",""), "來源":r.get("來源","Google News"),
+                    "連結":r.get("連結",""), "_dt":dt,
+                    "_direct": r.get("相關度") == "直接相關"
+                })
+            diag.append(("Google News備援", f"{len(gd)}則"))
+        else:
+            diag.append(("Google News備援", "0則"))
+    except Exception:
+        diag.append(("Google News備援", "ERR"))
+
+    # 3) 若 Yahoo / Google 都沒資料，嘗試 Yahoo quote 主頁（其本身也含相關新聞）
+    if not pool:
+        try:
+            url=f"https://tw.stock.yahoo.com/quote/{sid}.TW/"
+            r=requests.get(url,timeout=12,headers={"User-Agent":"Mozilla/5.0","Accept-Language":"zh-TW"})
+            diag.append(("Yahoo個股首頁", r.status_code))
+            if r.status_code==200:
+                pats=re.findall(r'<a[^>]+href="([^"]*/news/[^"]+)"[^>]*>(.*?)</a>',r.text,re.I|re.S)
+                for href,inner in pats:
+                    title=_v161_clean_html(inner)
+                    if len(title)<8: continue
+                    if href.startswith("/"): href="https://tw.stock.yahoo.com"+href
+                    pool.append({"標題":title,"來源":"Yahoo股市","連結":href,
+                                 "_dt":pd.Timestamp.now(tz="Asia/Taipei"),"_direct":True})
+        except Exception:
+            diag.append(("Yahoo個股首頁","ERR"))
+
+    # Normalize / filter / classify
+    out=[]; seen=set()
+    for x in pool:
+        title=str(x.get("標題","")).strip()
+        if not title: continue
+        # For direct Yahoo stock page, trust page association; otherwise require name/ticker or source-targeted result.
+        direct=bool(x.get("_direct")) or (name and name in title) or (sid and sid in title)
+        key=_v157_normalize_title(title)
+        sig=key[:52]
+        if not sig or sig in seen: continue
+        seen.add(sig)
+
+        source=str(x.get("來源","")).strip() or "公開新聞"
+        cat=_v158_category(title,source)
+        txt=title+" "+source
+        if any(k in txt for k in ["【公告】","〖公告〗","重大訊息","公開資訊觀測站"]):
+            cat="官方重大訊息"
+        elif any(k in txt for k in ["凱基","群益","元大證券","富邦證券","國泰證券",
+                                     "永豐投顧","統一證券","兆豐證券","投顧","目標價","研究報告"]):
+            cat="券商研究"
+
+        stars,_=_v157_news_priority(title,source)
+        if cat=="官方重大訊息": stars=5
+        elif cat in ("專業財經","券商研究"): stars=max(4,stars)
+
+        dt=x.get("_dt")
+        try:
+            if getattr(dt,"tzinfo",None) is None:
+                dt=pd.Timestamp(dt).tz_localize("Asia/Taipei")
+        except Exception:
+            dt=pd.Timestamp.now(tz="Asia/Taipei")
+        out.append({
+            "日期":pd.Timestamp(dt).strftime("%m/%d %H:%M"),
+            "分類":cat if cat in _V158_CATEGORIES else "一般媒體",
+            "重要度":int(stars),
+            "情緒":_v157_sentiment(title),
+            "標題":title,"來源":source,"連結":x.get("連結",""),
+            "相關度":"直接相關" if direct else "延伸相關",
+            "_dt":dt
+        })
+
+    df=pd.DataFrame(out)
+    if not df.empty:
+        df=df.sort_values(["重要度","_dt"],ascending=[False,False]).head(60).reset_index(drop=True)
+    return df, diag
+
+def _v161_render(stock_id, stock_name):
+    news, diag=_v161_news_engine(stock_id,stock_name,15)
+    st.markdown(f"## 📰 {stock_id} {stock_name}｜近 15 日新聞")
+    st.caption("Yahoo股市個股新聞直連＋Google News備援｜六大分類｜15分鐘更新")
+
+    cats=_V158_CATEGORIES
+    counts={c:int((news["分類"]==c).sum()) if news is not None and not news.empty else 0 for c in cats}
+    c1=st.columns(3)
+    for col,cat in zip(c1,cats[:3]): col.metric(cat,f"{counts[cat]} 則")
+    c2=st.columns(3)
+    for col,cat in zip(c2,cats[3:]): col.metric(cat,f"{counts[cat]} 則")
+
+    # Diagnostic: visible only in expander
+    with st.expander("新聞來源連線診斷", expanded=False):
+        if diag:
+            for src, stat in diag:
+                st.write(f"{src}：{stat}")
+        else:
+            st.write("尚無診斷資料")
+
+    if news is None or news.empty:
+        st.warning("Yahoo直連與Google News備援目前都沒有回傳可用新聞；不代表網路上沒有新聞。")
+        return
+
+    st.caption(f"本次取得 {len(news)} 則。Yahoo個股頁屬直接個股來源；相似標題已去重。")
+    for cat in cats:
+        part=news[news["分類"]==cat]
+        with st.expander(f"{cat}｜{len(part)} 則",expanded=(cat=="官方重大訊息" and len(part)>0)):
+            if part.empty:
+                st.caption("此分類目前沒有取得資料。")
+                continue
+            for _,r in part.iterrows():
+                stars="★"*int(r["重要度"])+"☆"*(5-int(r["重要度"]))
+                emo={"偏多":"🟢","中性":"⚪","偏空":"🔴"}.get(r["情緒"],"⚪")
+                rel="🎯" if r["相關度"]=="直接相關" else "🔎"
+                st.markdown(f"""<div style="padding:10px 12px;margin:7px 0;border:1px solid rgba(212,175,55,.28);
+                border-radius:12px;background:rgba(8,25,40,.72)">
+                <div style="font-size:.76rem;opacity:.76">{r['日期']} ｜ {rel} {r['相關度']} ｜ {emo} {r['情緒']} ｜ {r['來源']}</div>
+                <div style="color:#e9c54d;font-size:.80rem;margin-top:3px">{stars}</div>
+                <div style="font-weight:720;margin-top:4px;line-height:1.45">{r['標題']}</div>
+                <div style="margin-top:5px"><a href="{r['連結']}" target="_blank" style="color:#e5bd42;text-decoration:none">查看原文 ↗</a></div>
+                </div>""",unsafe_allow_html=True)
+
+try:
+    _v161_name=stock_name
+except Exception:
+    try: _v161_name=name
+    except Exception: _v161_name=""
+_v161_render(sid,_v161_name)
 
