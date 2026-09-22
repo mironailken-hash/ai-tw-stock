@@ -1680,7 +1680,17 @@ def _v141_live_quote_component(stock_id, height=150):
 
 # V15：把「是否可買」做成最醒目的核心決策。
 # 台股慣例：紅色＝偏多／買進；綠色＝偏空／減碼。
-_v147_sig = str(_v13_signal or "觀望")
+try:
+    _v147_sig = str(_v14_unified_signal(
+        regime,
+        _v10_p1,
+        _v10_p5,
+        short_score,
+        inst_score
+    ) or "觀望")
+except Exception:
+    # Safe fallback: do not crash the page if one optional factor is unavailable.
+    _v147_sig = "觀望"
 if _v147_sig in ("偏多確認", "可買進"):
     _v147_bg, _v147_border, _v147_color = "#4b1016", "#ff4d5e", "#fff5f6"
     _v147_title = "可買進｜偏多確認"
@@ -1696,12 +1706,12 @@ else:
 
 _v147_prob_parts = []
 try:
-    if _v10_p1 and _v10_p1.get("prob") is not None:
+    if isinstance(_v10_p1, dict) and _v10_p1.get("prob") is not None:
         _v147_prob_parts.append(f"次日上漲條件機率 {float(_v10_p1['prob'])*100:.1f}%")
 except Exception:
     pass
 try:
-    if _v10_p5 and _v10_p5.get("prob") is not None:
+    if isinstance(_v10_p5, dict) and _v10_p5.get("prob") is not None:
         _v147_prob_parts.append(f"5日上漲條件機率 {float(_v10_p5['prob'])*100:.1f}%")
 except Exception:
     pass
@@ -1874,7 +1884,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15 決策優先版
+    AI ACTION CENTER｜V15.1 決策優先修正版
     </div>
   <div class="decision-grid">
     <div>
@@ -1961,7 +1971,7 @@ v1311_invalidation_text = (
 )
 
 
-st.markdown("## V15 統一決策中心")
+st.markdown("## V15.1 統一決策中心")
 
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
