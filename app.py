@@ -1662,7 +1662,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.10 百億即時行情決策引擎
+    AI ACTION CENTER｜V13.11 百億即時行情決策引擎
     </div>
   <div class="decision-grid">
     <div>
@@ -1708,12 +1708,47 @@ try:
 except Exception:
     _v13_signal,_v13_invalid="觀望",np.nan
 
-st.markdown("## V13.10 決策摘要")
+
+# V13.11 判斷失效價：優先使用已計算的20日支撐，其次60日支撐，
+# 再以目前價格的5%風險帶備援。這只是模型重新評估參考，不是保證停損價。
+def _v1311_valid_num(x):
+    try:
+        v = float(x)
+        return v if np.isfinite(v) and v > 0 else np.nan
+    except Exception:
+        return np.nan
+
+_v1311_price = _v1311_valid_num(current_price if "current_price" in locals() else close)
+_v1311_s20 = _v1311_valid_num(support20 if "support20" in locals() else np.nan)
+_v1311_s60 = _v1311_valid_num(support60 if "support60" in locals() else np.nan)
+
+_v1311_candidates = [
+    v for v in (_v1311_s20, _v1311_s60)
+    if np.isfinite(v) and (not np.isfinite(_v1311_price) or v < _v1311_price)
+]
+
+if _v1311_candidates:
+    v1311_invalidation = max(_v1311_candidates)
+    v1311_invalidation_source = "近期技術支撐"
+elif np.isfinite(_v1311_price):
+    v1311_invalidation = _v1311_price * 0.95
+    v1311_invalidation_source = "價格風險帶"
+else:
+    v1311_invalidation = np.nan
+    v1311_invalidation_source = "尚無足夠價格資料"
+
+v1311_invalidation_text = (
+    f"{v1311_invalidation:,.2f} 元"
+    if np.isfinite(v1311_invalidation)
+    else "尚未形成有效失效價"
+)
+
+st.markdown("## V13.11 決策摘要")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
-_v13c.metric("判斷失效價", f"{_v13_invalid:.2f}" if pd.notna(_v13_invalid) else "資料不足")
-st.caption("模型訊號是條件式決策輔助，不代表保證買賣結果；失效參考用於辨識原判斷何時不再成立。")
+_v13c.metric("判斷失效價", f"{_v13_invalid:.2f}" if pd.notna(_v13_invalid) else "{v1311_invalidation_text}")
+st.caption("模型訊號是條件式決策輔助，不代表保證買賣結果；失效參考用於辨識原判斷何時不再成立。<br>判斷失效價依據：{v1311_invalidation_source}；跌破後應重新評估目前模型判斷。")
 _v13_accuracy_panel(sid)
 
 
