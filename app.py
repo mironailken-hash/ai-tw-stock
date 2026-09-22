@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V16.4")
+    st.markdown("## AI 條件機率｜V16.4.1")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V16.4 多空當沖決策版
+    AI ACTION CENTER｜V16.4.1 TypeError修正版
     </div>
   <div class="decision-grid">
     <div>
@@ -3277,12 +3277,37 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
     else: short_pts+=1
     if r5>0: long_pts+=1
     elif r5<0: short_pts+=1
-    if p1 is not None:
-        if p1>=0.56: long_pts+=1
-        elif p1<=0.44: short_pts+=1
-    if p5 is not None:
-        if p5>=0.58: long_pts+=1
-        elif p5<=0.42: short_pts+=1
+    # Probability values may arrive as tuple/dict/Series from earlier model code.
+    # Convert only a true scalar numeric value; otherwise skip this condition.
+    def _prob_scalar(v):
+        try:
+            if isinstance(v, dict):
+                for k in ("probability","prob","p","value"):
+                    if k in v:
+                        v=v[k]
+                        break
+            if isinstance(v, (tuple, list)):
+                nums=[z for z in v if isinstance(z,(int,float,np.integer,np.floating))]
+                v=nums[0] if nums else None
+            if isinstance(v, pd.Series):
+                v=v.dropna().iloc[-1] if len(v.dropna()) else None
+            if isinstance(v, np.ndarray):
+                v=v.reshape(-1)[-1] if v.size else None
+            if v is None:
+                return None
+            v=float(v)
+            return v if np.isfinite(v) else None
+        except Exception:
+            return None
+
+    p1s=_prob_scalar(p1)
+    p5s=_prob_scalar(p5)
+    if p1s is not None:
+        if p1s>=0.56: long_pts+=1
+        elif p1s<=0.44: short_pts+=1
+    if p5s is not None:
+        if p5s>=0.58: long_pts+=1
+        elif p5s<=0.42: short_pts+=1
     if _v164_num(inst_score,0)>0: long_pts+=1
     elif _v164_num(inst_score,0)<0: short_pts+=1
 
