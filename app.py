@@ -1605,7 +1605,7 @@ if not _v9_has_live:
     """,unsafe_allow_html=True)
 
 # ===== V13 機率誠信規則 =====
-st.markdown("""
+st.markdown(f"""
 <div class="v9-prob-rule">
  <b>V13 機率誠信規則</b>｜畫面中的「%」目前只保留實際市場百分比資料；未完成歷史回測與校準的 AI 預測不顯示 %。
  技術、法人、風險、資料完整度等內部模型因素不再以百分比冒充機率。
@@ -1662,7 +1662,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.11 百億即時行情決策引擎
+    AI ACTION CENTER｜V13.12 百億即時行情決策引擎
     </div>
   <div class="decision-grid">
     <div>
@@ -1743,7 +1743,7 @@ v1311_invalidation_text = (
     else "尚未形成有效失效價"
 )
 
-st.markdown("## V13.11 決策摘要")
+st.markdown("## V13.12 決策摘要")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
