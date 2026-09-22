@@ -5,14 +5,16 @@ import numpy as np
 import re
 import json
 import plotly.graph_objects as go
+SKLEARN_IMPORT_ERROR = ""
 try:
     from sklearn.linear_model import LogisticRegression
     from sklearn.preprocessing import StandardScaler
     from sklearn.pipeline import Pipeline
     from sklearn.metrics import brier_score_loss
     SKLEARN_OK = True
-except Exception:
+except Exception as _skerr:
     SKLEARN_OK = False
+    SKLEARN_IMPORT_ERROR = f"{type(_skerr).__name__}: {_skerr}"
 
 import xml.etree.ElementTree as ET
 import base64
@@ -744,7 +746,7 @@ def _v10_walk_forward_probability(df,horizon=1):
     try:
         diag["raw_rows"]=0 if df is None else len(df)
         if not SKLEARN_OK:
-            diag["reason"]="scikit-learn 未載入"
+            diag["reason"]="scikit-learn 未載入" + (f"｜{SKLEARN_IMPORT_ERROR}" if SKLEARN_IMPORT_ERROR else "")
             return None,diag
         z=_v10_features(df)
         diag["feature_rows"]=len(z)
@@ -802,7 +804,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 真實機率｜V13.6")
+    st.markdown("## AI 真實機率｜V13.7")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1649,7 +1651,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.6 百億超級決策引擎
+    AI ACTION CENTER｜V13.7 百億超級決策引擎
     </div>
   <div class="decision-grid">
     <div>
