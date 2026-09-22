@@ -896,7 +896,7 @@ def _v13_settle_ledger(sid, price_df):
 
 def _v13_accuracy_panel(sid):
     rows=[x for x in _v13_load_ledger() if str(x.get("stock"))==str(sid)]
-    st.markdown("## AI 實戰驗證｜V14.2")
+    st.markdown("## AI 實戰驗證｜V14.3")
     settled1=[x for x in rows if x.get("p1") is not None and x.get("y1") is not None]
     settled5=[x for x in rows if x.get("p5") is not None and x.get("y5") is not None]
     c1,c2,c3=st.columns(3)
@@ -964,7 +964,7 @@ def _v14_unified_signal(regime, r1, r5, short_score=None, inst_score=None):
 
 def _v14_validation_panel(r1,r5):
     health,reason=_v14_model_health(r1,r5)
-    st.markdown("## 模型自我驗證｜V14.2")
+    st.markdown("## 模型自我驗證｜V14.3")
     a,b,c=st.columns(3)
     a.metric("模型健康度",health)
     a.caption(reason)
@@ -1677,7 +1677,45 @@ def _v141_live_quote_component(stock_id, height=150):
     components.html(html, height=height, scrolling=False)
 
 
+
+def _v143_live_quote_fragment(stock_id):
+    """Only this fragment reruns every 10s; the rest of the Streamlit app stays put."""
+    def render():
+        q = realtime_quote(stock_id)
+        if q and pd.notna(q.get("price", np.nan)):
+            px=float(q["price"])
+            prev=q.get("prev_close", np.nan)
+            chg=(px-float(prev)) if pd.notna(prev) else np.nan
+            pct=(chg/float(prev)*100) if pd.notna(prev) and float(prev)!=0 else np.nan
+            arrow="▲" if pd.notna(chg) and chg>0 else ("▼" if pd.notna(chg) and chg<0 else "")
+            op=q.get("open",np.nan); hi=q.get("high",np.nan); lo=q.get("low",np.nan); vol=q.get("volume",np.nan)
+            tm=q.get("time","")
+            def f(v,d=2):
+                try: return f"{float(v):,.{d}f}" if pd.notna(v) else "—"
+                except: return "—"
+            st.markdown(f"""
+            <div class="v6-live">
+              <div class="v6-kicker">LIVE PRICE｜局部即時價格</div>
+              <div class="v6-price">{f(px)}</div>
+              <div class="v6-change">{arrow} {f(abs(chg)) if pd.notna(chg) else "—"}　{("+" if pd.notna(pct) and pct>=0 else "")}{f(pct)}%</div>
+              <div class="v6-meta">開 {f(op)}　高 {f(hi)}　低 {f(lo)}　量 {f(vol,0)}<br>
+              TWSE MIS｜{tm}｜此區每10秒更新，其他分析不重新整理</div>
+            </div>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("LIVE PRICE｜目前未取得盤中成交價；其他分析維持不動。")
+
+    # Streamlit >=1.37 supports fragments with run_every.
+    if hasattr(st, "fragment"):
+        frag = st.fragment(run_every=10)(render)
+        frag()
+    else:
+        render()
+
+
 # ===== V13.9 最上方：即時價格 + AI 當沖雷達 =====
+_v143_live_quote_fragment(sid)
+
 
 # 即時價格可盤中刷新；日線真機率模型仍使用已完成日線，避免把跳動報價冒充重新校準的機率。
 rt_state = "🟢 盤中最新行情" if _market_open and rt and pd.notna(rt_price) else "⚪ 非開盤時段／最新取得資料"
@@ -1697,7 +1735,7 @@ _rt_ohlv = f"開 {_v139_fmt(_rt_open)}　高 {_v139_fmt(_rt_high)}　低 {_v139_
 st.markdown(f"""
 <div class="v6-live-grid">
   <div class="v6-live-card">
-    <div class="kicker">LIVE PRICE｜即時價格</div>
+    <div class="kicker">SNAPSHOT PRICE｜分析時價格</div>
     <div class="v6-price">{close:.2f}</div>
     <div class="v6-change {'up' if chg>=0 else 'down'}">{chg:+.2f}%</div>
     <div class="v6-meta">{rt_state}<br>{_rt_ohlv}<br>{price_source}｜更新 {update_text}</div>
@@ -1792,7 +1830,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V14.2 自我驗證決策系統
+    AI ACTION CENTER｜V14.3 自我驗證決策系統
     </div>
   <div class="decision-grid">
     <div>
@@ -1878,7 +1916,7 @@ v1311_invalidation_text = (
     else "尚未形成有效失效價"
 )
 
-st.markdown("## V14.2 統一決策中心")
+st.markdown("## V14.3 統一決策中心")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
