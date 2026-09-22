@@ -25,6 +25,99 @@ from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
 
+st.markdown(r"""
+<style>
+/* ===== V15.5 MOBILE LAYOUT FIX ===== */
+@media (max-width: 768px) {
+    /* Hide/collapse Streamlit sidebar so it cannot steal horizontal viewport */
+    [data-testid="stSidebar"] {
+        transform: translateX(-100%) !important;
+        min-width: 0 !important;
+        width: 0 !important;
+        visibility: hidden !important;
+    }
+    [data-testid="stSidebarCollapsedControl"],
+    [data-testid="collapsedControl"] {
+        display: none !important;
+    }
+
+    /* Force main page to occupy the entire phone width */
+    [data-testid="stAppViewContainer"],
+    [data-testid="stMain"],
+    .stMain,
+    .main {
+        margin-left: 0 !important;
+        padding-left: 0 !important;
+        width: 100% !important;
+        max-width: 100vw !important;
+        overflow-x: hidden !important;
+    }
+
+    .main .block-container,
+    [data-testid="stMainBlockContainer"],
+    section.main > div {
+        width: 100% !important;
+        max-width: 100% !important;
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        box-sizing: border-box !important;
+    }
+
+    /* Prevent custom HTML cards/banner from keeping desktop fixed widths */
+    .hero, .hero-wrap, .hero-card, .action-card, .decision-card,
+    .card, .panel, .market-card, .glass, .glass-card {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    img {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+
+    /* Stack Streamlit columns vertically on phones */
+    [data-testid="stHorizontalBlock"] {
+        flex-direction: column !important;
+        gap: 0.65rem !important;
+    }
+    [data-testid="column"] {
+        width: 100% !important;
+        flex: 1 1 100% !important;
+        min-width: 0 !important;
+    }
+
+    /* Search / buttons */
+    .stTextInput, .stButton, .stButton > button {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    /* Typography: avoid giant clipped headings */
+    h1 { font-size: 1.75rem !important; line-height: 1.15 !important; }
+    h2 { font-size: 1.40rem !important; line-height: 1.2 !important; }
+    h3 { font-size: 1.15rem !important; line-height: 1.25 !important; }
+
+    /* Tables and charts stay inside viewport */
+    [data-testid="stDataFrame"],
+    [data-testid="stPlotlyChart"],
+    .js-plotly-plot, .plot-container {
+        max-width: 100% !important;
+        overflow-x: auto !important;
+    }
+
+    /* Long text must wrap instead of widening page */
+    p, span, div {
+        overflow-wrap: anywhere;
+        word-break: break-word;
+    }
+}
+</style>
+""", unsafe_allow_html=True)
+
 API = "https://api.finmindtrade.com/api/v4/data"
 
 def local_image_b64(path):
@@ -805,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V15.4")
+    st.markdown("## AI 條件機率｜V15.5")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -896,7 +989,7 @@ def _v13_settle_ledger(sid, price_df):
 
 def _v13_accuracy_panel(sid):
     rows=[x for x in _v13_load_ledger() if str(x.get("stock"))==str(sid)]
-    st.markdown("## AI 實戰驗證｜V15.4")
+    st.markdown("## AI 實戰驗證｜V15.5")
     settled1=[x for x in rows if x.get("p1") is not None and x.get("y1") is not None]
     settled5=[x for x in rows if x.get("p5") is not None and x.get("y5") is not None]
     c1,c2,c3=st.columns(3)
@@ -964,7 +1057,7 @@ def _v14_unified_signal(regime, r1, r5, short_score=None, inst_score=None):
 
 def _v14_validation_panel(r1,r5):
     health,reason=_v14_model_health(r1,r5)
-    st.markdown("## 模型自我驗證｜V15.4")
+    st.markdown("## 模型自我驗證｜V15.5")
     a,b,c=st.columns(3)
     a.metric("模型健康度",health)
     a.caption(reason)
@@ -1684,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15.4 首頁精簡版
+    AI ACTION CENTER｜V15.5 手機版面修正版
     </div>
   <div class="decision-grid">
     <div>
