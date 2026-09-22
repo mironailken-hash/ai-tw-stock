@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V15.6")
+    st.markdown("## AI 條件機率｜V15.7")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15.6.1 新聞修正版
+    AI ACTION CENTER｜V15.7 專業新聞情報版
     </div>
   <div class="decision-grid">
     <div>
@@ -2233,13 +2233,133 @@ def _v156_render_stock_news(stock_id, stock_name):
         </div>""",unsafe_allow_html=True)
 
 
+# ===== V15.7：專業新聞情報中心 =====
+def _v157_news_priority(title, source):
+    text = f"{title} {source}".lower()
 
-# ===== V15.6.1：個股近15日新聞（函式定義後再執行） =====
+    official_keys = ["公開資訊觀測站", "mops", "證交所", "twse", "櫃買中心", "tpex"]
+    major_keys = ["重大訊息", "財報", "法說", "營收", "eps", "股利", "現金增資",
+                  "減資", "併購", "收購", "處分", "停工", "董事會", "訂單", "擴產"]
+    pro_sources = ["經濟日報", "工商時報", "moneydj", "鉅亨", "anue", "中央社",
+                   "財訊", "今周刊", "商業周刊", "財經"]
+    broker_keys = ["凱基", "群益", "元大", "富邦", "國泰", "永豐", "統一證券",
+                   "兆豐", "玉山證券", "中信證券", "券商", "投顧"]
+
+    if any(k.lower() in text for k in official_keys):
+        return 5, "官方重大資訊"
+    if any(k.lower() in text for k in major_keys):
+        return 5, "公司重大事件"
+    if any(k.lower() in text for k in broker_keys):
+        return 4, "券商／研究"
+    if any(k.lower() in text for k in pro_sources):
+        return 4, "專業財經"
+    return 3, "一般財經"
+
+def _v157_event_type(title):
+    groups = [
+        ("財報／營收", ["營收","財報","eps","獲利","毛利","季報","年報"]),
+        ("法說／展望", ["法說","展望","財測","上修","下修"]),
+        ("訂單／產能", ["訂單","接單","擴產","產能","出貨","供應鏈"]),
+        ("股利／資本", ["股利","配息","現金增資","減資","庫藏股"]),
+        ("公司治理", ["董事會","董事","經理人","處分","併購","收購"]),
+        ("產業消息", ["ai","伺服器","半導體","pcb","電子","需求","報價","產業"]),
+    ]
+    t = str(title).lower()
+    for label, keys in groups:
+        if any(k in t for k in keys):
+            return label
+    return "市場消息"
+
+def _v157_sentiment(title):
+    pos = ["上修","成長","創高","獲利","擴產","接單","受惠","看旺","優於",
+           "突破","漲停","營收增","增加","回升","轉盈","新高"]
+    neg = ["下修","衰退","虧損","減產","裁員","調降","低於","下滑","停工",
+           "跌停","營收減","減少","轉虧","新低"]
+    t = str(title)
+    p = sum(k in t for k in pos)
+    n = sum(k in t for k in neg)
+    return "偏多" if p > n else ("偏空" if n > p else "中性")
+
+def _v157_normalize_title(title):
+    t = re.sub(r"\s*[-｜|]\s*[^｜|-]{2,30}$", "", str(title))
+    t = re.sub(r"[^\w\u4e00-\u9fff]", "", t.lower())
+    return t[:70]
+
+def _v157_prepare_news(stock_id, stock_name):
+    base = _v156_stock_news(stock_id, stock_name, days=15, limit=30)
+    if base is None or base.empty:
+        return pd.DataFrame()
+
+    rows, seen = [], set()
+    for _, r in base.iterrows():
+        title = str(r.get("標題",""))
+        source = str(r.get("來源",""))
+        key = _v157_normalize_title(title)
+        # Approximate duplicate suppression.
+        short_key = key[:42]
+        if not short_key or short_key in seen:
+            continue
+        seen.add(short_key)
+
+        stars, level = _v157_news_priority(title, source)
+        rows.append({
+            "日期": r.get("日期",""),
+            "重要度": stars,
+            "分類": _v157_event_type(title),
+            "情緒": _v157_sentiment(title),
+            "標題": title,
+            "來源": source,
+            "連結": r.get("連結",""),
+            "層級": level,
+        })
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    return df.sort_values(["重要度","日期"], ascending=[False,False]).head(15).reset_index(drop=True)
+
+def _v157_render_news(stock_id, stock_name):
+    st.markdown("## 📰 近 15 日專業新聞情報")
+    st.caption("官方／重大事件優先排序｜新聞重要度與標題情緒分開判讀｜不直接修改 AI 條件機率")
+
+    news = _v157_prepare_news(stock_id, stock_name)
+    if news.empty:
+        st.info("近 15 日暫未取得與此股票直接相關的公開新聞。")
+        return
+
+    c1, c2, c3 = st.columns(3)
+    major = int((news["重要度"] >= 5).sum())
+    bullish = int((news["情緒"] == "偏多").sum())
+    bearish = int((news["情緒"] == "偏空").sum())
+    c1.metric("重大／高重要度", f"{major} 則")
+    c2.metric("偏多標題", f"{bullish} 則")
+    c3.metric("偏空標題", f"{bearish} 則")
+
+    for _, r in news.iterrows():
+        stars = "★" * int(r["重要度"]) + "☆" * (5-int(r["重要度"]))
+        icon = {"偏多":"🟢","中性":"⚪","偏空":"🔴"}.get(r["情緒"],"⚪")
+        border = "rgba(224,181,55,.55)" if int(r["重要度"]) >= 5 else "rgba(212,175,55,.22)"
+        st.markdown(
+            f"""<div style="padding:11px 13px;margin:8px 0;border:1px solid {border};
+            border-radius:12px;background:rgba(8,25,40,.72)">
+              <div style="font-size:.76rem;opacity:.78">
+                {r['日期']} ｜ {r['層級']} ｜ {r['分類']} ｜ {icon} {r['情緒']}
+              </div>
+              <div style="color:#e9c54d;font-size:.82rem;margin-top:3px">{stars}</div>
+              <div style="font-weight:750;margin-top:4px;line-height:1.48">{r['標題']}</div>
+              <div style="font-size:.78rem;opacity:.72;margin-top:4px">來源：{r['來源']}</div>
+              <div style="margin-top:5px"><a href="{r['連結']}" target="_blank"
+              style="color:#e5bd42;text-decoration:none">查看原文 ↗</a></div>
+            </div>""",
+            unsafe_allow_html=True
+        )
+
+# V15.7 新聞區：函式皆已定義後才執行，避免 NameError
 try:
-    _v156_name = stock_name
+    _v157_name = stock_name
 except Exception:
     try:
-        _v156_name = name
+        _v157_name = name
     except Exception:
-        _v156_name = ""
-_v156_render_stock_news(sid, _v156_name)
+        _v157_name = ""
+_v157_render_news(sid, _v157_name)
+
