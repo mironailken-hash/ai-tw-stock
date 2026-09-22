@@ -804,7 +804,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 真實機率｜V13.8")
+    st.markdown("## AI 真實機率｜V13.9")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1345,7 +1345,7 @@ shares = st.session_state.get("active_shares_v48", shares)
 # 開盤中每 8 秒自動刷新；使用者不需要重按搜尋
 _market_open, _tw_now = market_is_open_tw()
 if _market_open:
-    st.markdown('<meta http-equiv="refresh" content="8">', unsafe_allow_html=True)
+    st.markdown('<meta http-equiv="refresh" content="10">', unsafe_allow_html=True)
 
 sid,name=resolve_stock(q)
 
@@ -1548,10 +1548,21 @@ else:
     verdict_note = "短線結構偏弱，優先等待趨勢修復，而不是追價。"
 
 
-# ===== V6 最上方：即時價格 + AI 當沖雷達 =====
-rt_state = "🟢 開盤中・自動更新" if _market_open and rt and pd.notna(rt_price) else "⚪ 非開盤時段／最新取得資料"
-price_source = data_mode
+# ===== V13.9 最上方：即時價格 + AI 當沖雷達 =====
+# 即時價格可盤中刷新；日線真機率模型仍使用已完成日線，避免把跳動報價冒充重新校準的機率。
+rt_state = "🟢 盤中最新行情・約10秒自動更新" if _market_open and rt and pd.notna(rt_price) else "⚪ 非開盤時段／最新取得資料"
+price_source = "TWSE MIS 盤中行情" if (_market_open and rt and pd.notna(rt_price)) else data_mode
 update_text = data_time if data_time else (_tw_now.strftime("%Y-%m-%d %H:%M:%S") if _tw_now else "")
+_rt_open = rt.get("open", np.nan) if rt else np.nan
+_rt_high = rt.get("high", np.nan) if rt else np.nan
+_rt_low = rt.get("low", np.nan) if rt else np.nan
+_rt_vol = rt.get("volume", np.nan) if rt else np.nan
+def _v139_fmt(v, digits=2):
+    try:
+        return f"{float(v):,.{digits}f}" if pd.notna(v) else "—"
+    except Exception:
+        return "—"
+_rt_ohlv = f"開 {_v139_fmt(_rt_open)}　高 {_v139_fmt(_rt_high)}　低 {_v139_fmt(_rt_low)}　量 {_v139_fmt(_rt_vol,0)}"
 
 st.markdown(f"""
 <div class="v6-live-grid">
@@ -1559,7 +1570,7 @@ st.markdown(f"""
     <div class="kicker">LIVE PRICE｜即時價格</div>
     <div class="v6-price">{close:.2f}</div>
     <div class="v6-change {'up' if chg>=0 else 'down'}">{chg:+.2f}%</div>
-    <div class="v6-meta">{rt_state}<br>{price_source}｜{update_text}</div>
+    <div class="v6-meta">{rt_state}<br>{_rt_ohlv}<br>{price_source}｜更新 {update_text}</div>
   </div>
   <div class="v6-live-card">
     <div class="kicker">SUPER DAY TRADE｜百億超級當沖雷達</div>
@@ -1651,7 +1662,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.8 百億超級決策引擎
+    AI ACTION CENTER｜V13.9 百億即時行情決策引擎
     </div>
   <div class="decision-grid">
     <div>
