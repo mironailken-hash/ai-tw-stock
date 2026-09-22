@@ -804,7 +804,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 真實機率｜V13.9")
+    st.markdown("## AI 機率模型｜V14")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -835,7 +835,7 @@ def _v10_probability_panel(df):
         st.warning(f"明日模型：{d1['reason']}｜5日模型：{d5['reason']}")
     else:
         st.success("歷史樣本與 Walk-forward 驗證均已通過。")
-    st.caption("這些是統計模型的條件機率估計，不保證未來結果；市場結構改變時，歷史校準可能失效。")
+    st.caption("這些是經 Walk-forward 歷史驗證的條件機率估計，不保證未來結果；目前尚未加入獨立的 post-hoc 機率校準層，市場結構改變時仍可能失效。")
     return r1,r5
 
 def _v13_load_ledger():
@@ -895,7 +895,7 @@ def _v13_settle_ledger(sid, price_df):
 
 def _v13_accuracy_panel(sid):
     rows=[x for x in _v13_load_ledger() if str(x.get("stock"))==str(sid)]
-    st.markdown("## AI 戰績｜V13")
+    st.markdown("## AI 實戰驗證｜V14")
     settled1=[x for x in rows if x.get("p1") is not None and x.get("y1") is not None]
     settled5=[x for x in rows if x.get("p5") is not None and x.get("y5") is not None]
     c1,c2,c3=st.columns(3)
@@ -903,7 +903,7 @@ def _v13_accuracy_panel(sid):
     c2.metric("明日已驗證",len(settled1))
     c3.metric("5日已驗證",len(settled5))
     if not settled1 and not settled5:
-        st.caption("尚未累積足夠的實際預測結果。V13 不會用回測命中率冒充真實上線戰績。")
+        st.caption("尚未累積足夠的實際預測結果。V14 不會用回測命中率冒充真實上線戰績。")
         return
     for label,data,pk,yk in [
         ("明日模型",settled1,"p1","y1"),("5日模型",settled5,"p5","y5")]:
@@ -915,6 +915,69 @@ def _v13_accuracy_panel(sid):
             st.write(f"**{label}**｜實際方向命中率 {hit*100:.1f}%｜Brier {bs:.3f}｜樣本 {len(data)}")
         elif data:
             st.write(f"**{label}**｜已驗證 {len(data)} 筆；未滿 10 筆，不顯示命中率。")
+
+
+def _v14_model_health(r1, r5):
+    """Model-health gate. This is not a probability."""
+    rows=[r for r in (r1,r5) if r]
+    if len(rows)<2:
+        return "資料不足","至少需要明日與5日兩個模型都完成驗證"
+    worst=max(float(r.get("brier",1)) for r in rows)
+    statuses=[str(r.get("status","")) for r in rows]
+    if worst>0.26 or "不足" in statuses:
+        return "警戒",f"Brier 最高 {worst:.3f}，模型表現偏弱"
+    if worst>0.23 or "普通" in statuses:
+        return "普通",f"Brier 最高 {worst:.3f}，機率僅作輔助"
+    return "良好",f"Brier 最高 {worst:.3f}，歷史驗證相對穩定"
+
+def _v14_unified_signal(regime, r1, r5, short_score=None, inst_score=None):
+    """One final signal. No fake probability and no winner-style certainty."""
+    if not r1 or not r5:
+        return "觀望","機率模型資料尚未完整"
+    p1=float(r1["prob"]); p5=float(r5["prob"])
+    health,_=_v14_model_health(r1,r5)
+    if health=="警戒":
+        return "觀望","模型健康度警戒，暫不放大訊號"
+    tech=0
+    try:
+        if short_score is not None:
+            tech=1 if float(short_score)>=2 else (-1 if float(short_score)<=-2 else 0)
+    except Exception:
+        tech=0
+    chip=0
+    try:
+        if inst_score is not None:
+            chip=1 if float(inst_score)>0 else (-1 if float(inst_score)<0 else 0)
+    except Exception:
+        chip=0
+
+    if p1>=.62 and p5>=.62 and regime!="偏空" and tech>=0:
+        return "偏多確認",f"明日 {p1*100:.1f}%、5日 {p5*100:.1f}% 且市場未偏空"
+    if p1>=.56 and p5>=.56 and regime!="偏空":
+        return "等待買進",f"機率略偏多，但尚未達偏多確認門檻"
+    if p1<=.38 and p5<=.38:
+        return "風險偏高",f"明日 {p1*100:.1f}%、5日 {p5*100:.1f}%"
+    if p1<=.44 and p5<=.44:
+        return "減碼警戒","兩個週期的上漲機率同步偏低"
+    return "觀望","多空優勢尚未拉開"
+
+def _v14_validation_panel(r1,r5):
+    health,reason=_v14_model_health(r1,r5)
+    st.markdown("## 模型自我驗證｜V14")
+    a,b,c=st.columns(3)
+    a.metric("模型健康度",health)
+    a.caption(reason)
+    if r1:
+        b.metric("明日 Brier",f"{float(r1['brier']):.3f}")
+        b.caption(f"Walk-forward {int(r1['n'])} 筆｜{r1['status']}")
+    else:
+        b.metric("明日 Brier","—")
+    if r5:
+        c.metric("5日 Brier",f"{float(r5['brier']):.3f}")
+        c.caption(f"Walk-forward {int(r5['n'])} 筆｜{r5['status']}")
+    else:
+        c.metric("5日 Brier","—")
+    st.caption("健康度用來判斷模型是否值得信任，不是上漲機率。Brier 越低越好；市場結構改變時模型可能退化。")
 
 def _v13_market_regime(price_df, inst_df=None):
     """Transparent regime label; not a probability."""
@@ -1662,7 +1725,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.14 局部即時行情決策引擎
+    AI ACTION CENTER｜V14 自我驗證決策系統
     </div>
   <div class="decision-grid">
     <div>
@@ -1704,9 +1767,14 @@ _v13_settle_ledger(sid,price)
 _v13_record_prediction(sid,name,price,_v10_p1,_v10_p5)
 _v13_regime=_v13_market_regime(price,inst if "inst" in globals() else None)
 try:
-    _v13_signal,_v13_invalid=_v13_trade_plan(current,support,resistance,_v13_regime,_v10_p1,_v10_p5)
+    _v13_signal,_v14_signal_reason=_v14_unified_signal(
+        _v13_regime,_v10_p1,_v10_p5,
+        short_score=short if "short" in locals() else None,
+        inst_score=inst_score if "inst_score" in locals() else None
+    )
+    _,_v13_invalid=_v13_trade_plan(current,support,resistance,_v13_regime,_v10_p1,_v10_p5)
 except Exception:
-    _v13_signal,_v13_invalid="觀望",np.nan
+    _v13_signal,_v14_signal_reason,_v13_invalid="觀望","決策條件尚未完整",np.nan
 
 
 # V13.11 判斷失效價：優先使用已計算的20日支撐，其次60日支撐，
@@ -1743,7 +1811,7 @@ v1311_invalidation_text = (
     else "尚未形成有效失效價"
 )
 
-st.markdown("## V13.14 決策摘要")
+st.markdown("## V14 統一決策中心")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
@@ -1758,10 +1826,12 @@ else:
 
 _v13c.metric("判斷失效價", _v1313_invalid_text)
 st.caption(
-    f"模型訊號是條件式決策輔助，不代表保證買賣結果；"
-    f"判斷失效價依據：{_v1313_source}；跌破後應重新評估目前模型判斷。"
+    f"統一訊號依據：{_v14_signal_reason}。"
+    f" 判斷失效價依據：{_v1313_source}；跌破後應重新評估目前模型判斷。"
 )
+_v14_validation_panel(_v10_p1,_v10_p5)
 _v13_accuracy_panel(sid)
+st.caption("實戰預測目前仍使用 Streamlit 執行環境暫存；網站重新部署或休眠後可能重置。要永久保存戰績，需要再連接外部資料庫。")
 
 
 st.markdown("### 關鍵價位")
