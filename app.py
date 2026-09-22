@@ -1662,7 +1662,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.12 百億即時行情決策引擎
+    AI ACTION CENTER｜V13.13 百億即時行情決策引擎
     </div>
   <div class="decision-grid">
     <div>
@@ -1743,12 +1743,24 @@ v1311_invalidation_text = (
     else "尚未形成有效失效價"
 )
 
-st.markdown("## V13.12 決策摘要")
+st.markdown("## V13.13 決策摘要")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
-_v13c.metric("判斷失效價", f"{_v13_invalid:.2f}" if pd.notna(_v13_invalid) else "{v1311_invalidation_text}")
-st.caption("模型訊號是條件式決策輔助，不代表保證買賣結果；失效參考用於辨識原判斷何時不再成立。<br>判斷失效價依據：{v1311_invalidation_source}；跌破後應重新評估目前模型判斷。")
+
+# 優先採用原模型可用的失效價；若原模型無法產生，就使用 V13.11 備援失效價。
+if pd.notna(_v13_invalid):
+    _v1313_invalid_text = f"{float(_v13_invalid):,.2f} 元"
+    _v1313_source = "模型技術條件"
+else:
+    _v1313_invalid_text = v1311_invalidation_text
+    _v1313_source = v1311_invalidation_source
+
+_v13c.metric("判斷失效價", _v1313_invalid_text)
+st.caption(
+    f"模型訊號是條件式決策輔助，不代表保證買賣結果；"
+    f"判斷失效價依據：{_v1313_source}；跌破後應重新評估目前模型判斷。"
+)
 _v13_accuracy_panel(sid)
 
 
