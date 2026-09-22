@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V16.4.1")
+    st.markdown("## AI 條件機率｜V16.5")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V16.4.1 TypeError修正版
+    AI ACTION CENTER｜V16.5 決策置頂版
     </div>
   <div class="decision-grid">
     <div>
@@ -1794,6 +1794,10 @@ st.markdown(f"""
   </div>
 </div>
 """,unsafe_allow_html=True)
+
+# V16.5：多空・當沖決策固定顯示在 ACTION CENTER 正下方。
+# 先建立位置，等下方模型機率與函式準備完成後，再回填到這裡。
+_v165_trade_decision_slot = st.empty()
 
 def _v143_live_quote_fragment(stock_id):
     """Only this fragment reruns every 10s; the rest of the Streamlit app stays put."""
@@ -3419,5 +3423,6 @@ except Exception: _v164_p5 = None
 try: _v164_inst = inst_score
 except Exception: _v164_inst = 0
 
-_v164_panel(_v164_df,_v164_q,_v164_p1,_v164_p5,_v164_inst)
+with _v165_trade_decision_slot.container():
+    _v164_panel(_v164_df,_v164_q,_v164_p1,_v164_p5,_v164_inst)
 
