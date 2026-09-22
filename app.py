@@ -1637,7 +1637,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.3 百億超級決策引擎
+    AI ACTION CENTER｜V13.4 百億超級決策引擎
     </div>
   <div class="decision-grid">
     <div>
@@ -1776,6 +1776,9 @@ if not inst.empty:
 
 # 數值欄位格式與淨額
 for col in ["買進","賣出"]:
+    # V13.4: institutional table defensive initialization
+    if "table_df" not in locals() or table_df is None:
+        table_df = inst.copy() if "inst" in locals() and isinstance(inst, pd.DataFrame) else pd.DataFrame()
     if col in table_df.columns:
         table_df[col] = pd.to_numeric(table_df[col], errors="coerce").fillna(0)
 
