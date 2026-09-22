@@ -659,12 +659,16 @@ def realtime_quote(sid):
 
 
 def v9_market_session():
-    """台灣股市時段。完全避開 datetime 名稱衝突。"""
-    _dtmod = __import__("datetime")
-    now = _dtmod.datetime.now(ZoneInfo("Asia/Taipei"))
-    if now.weekday() >= 5:
+    """台灣股市時段：直接以 Unix time 加 UTC+8 計算。"""
+    import time as _time
+    now = _time.gmtime(_time.time() + 8 * 3600)
+    weekday = now.tm_wday
+    hour = now.tm_hour
+    minute = now.tm_min
+
+    if weekday >= 5:
         return "closed", "休市"
-    mins = now.hour * 60 + now.minute
+    mins = hour * 60 + minute
     if mins < 9 * 60:
         return "pre", "盤前"
     if mins <= 13 * 60 + 30:
