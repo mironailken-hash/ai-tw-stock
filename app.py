@@ -805,7 +805,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 機率模型｜V15.3")
+    st.markdown("## AI 條件機率｜V15.4")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -896,7 +896,7 @@ def _v13_settle_ledger(sid, price_df):
 
 def _v13_accuracy_panel(sid):
     rows=[x for x in _v13_load_ledger() if str(x.get("stock"))==str(sid)]
-    st.markdown("## AI 實戰驗證｜V15.3")
+    st.markdown("## AI 實戰驗證｜V15.4")
     settled1=[x for x in rows if x.get("p1") is not None and x.get("y1") is not None]
     settled5=[x for x in rows if x.get("p5") is not None and x.get("y5") is not None]
     c1,c2,c3=st.columns(3)
@@ -904,7 +904,7 @@ def _v13_accuracy_panel(sid):
     c2.metric("明日已驗證",len(settled1))
     c3.metric("5日已驗證",len(settled5))
     if not settled1 and not settled5:
-        st.caption("尚未累積足夠的實際預測結果。V14 不會用回測命中率冒充真實上線戰績。")
+        st.caption("尚未累積足夠的實際預測結果。系統不會用回測命中率冒充真實上線戰績。")
         return
     for label,data,pk,yk in [
         ("明日模型",settled1,"p1","y1"),("5日模型",settled5,"p5","y5")]:
@@ -964,7 +964,7 @@ def _v14_unified_signal(regime, r1, r5, short_score=None, inst_score=None):
 
 def _v14_validation_panel(r1,r5):
     health,reason=_v14_model_health(r1,r5)
-    st.markdown("## 模型自我驗證｜V15.3")
+    st.markdown("## 模型自我驗證｜V15.4")
     a,b,c=st.columns(3)
     a.metric("模型健康度",health)
     a.caption(reason)
@@ -1304,8 +1304,8 @@ def attack_status(short, close, support, resistance, vol_ratio, inst_score=50):
     confirmations += 1 if inst_score>=55 else 0
 
     if short>=78 and confirmations>=3:
-        label="🟢 模型訊號：符合買進條件"
-        reason="短線趨勢、價格突破、量能與籌碼中至少三項同步確認。"
+        label="🟢 條件訊號：符合買進條件"
+        reason="技術／量價／籌碼條件同步確認；AI 條件機率與模型健康度另列於下方。"
     elif short>=62 and confirmations>=2:
         label="🟡 模型訊號：等待買進"
         reason="方向偏強，但條件確認尚未完整；等待突破或拉回止穩。"
@@ -1684,7 +1684,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15.3 決策一致性修正版
+    AI ACTION CENTER｜V15.4 首頁精簡版
     </div>
   <div class="decision-grid">
     <div>
