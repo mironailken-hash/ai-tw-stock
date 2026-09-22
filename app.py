@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V15.5")
+    st.markdown("## AI 條件機率｜V15.6")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15.5 手機版面修正版
+    AI ACTION CENTER｜V15.6 個股15日新聞版
     </div>
   <div class="decision-grid">
     <div>
@@ -1842,6 +1842,16 @@ def _v143_live_quote_fragment(stock_id):
 
 # ===== V13.9 最上方：即時價格 + AI 當沖雷達 =====
 _v143_live_quote_fragment(sid)
+
+
+try:
+    _v156_name = stock_name
+except Exception:
+    try:
+        _v156_name = name
+    except Exception:
+        _v156_name = ""
+_v156_render_stock_news(sid, _v156_name)
 
 
 # 即時價格可盤中刷新；日線真機率模型仍使用已完成日線，避免把跳動報價冒充重新校準的機率。
@@ -2167,3 +2177,67 @@ else:
 
 
 st.warning("「可買進／等待買進／觀望／減碼警戒／賣出」為程式依最新取得或最新交易日市場資料計算的模型訊號，不是保證獲利或個人化投資指示；盤中行情與券商公開研究可能有延遲或資料缺漏。")
+# ===== V15.6：個股近15日新聞 =====
+@st.cache_data(ttl=900, show_spinner=False)
+def _v156_stock_news(stock_id, stock_name, days=15, limit=12):
+    cols=["日期","情緒","標題","來源","連結"]
+    try:
+        now=pd.Timestamp.now(tz="Asia/Taipei")
+        cutoff=now-pd.Timedelta(days=days)
+        sid_=str(stock_id or "").strip()
+        name_=str(stock_name or "").strip()
+        terms=[]
+        if name_: terms.append(f'"{name_}"')
+        if sid_: terms.append(sid_)
+        if not terms: return pd.DataFrame(columns=cols)
+        q=f'({" OR ".join(terms)}) after:{cutoff.strftime("%Y-%m-%d")}'
+        url="https://news.google.com/rss/search?q="+quote_plus(q)+"&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
+        rr=requests.get(url,timeout=10,headers={"User-Agent":"Mozilla/5.0"})
+        rr.raise_for_status()
+        root=ET.fromstring(rr.content)
+        pos=["上修","成長","創高","獲利","擴產","接單","受惠","看旺","優於","突破","漲停","營收增"]
+        neg=["下修","衰退","虧損","減產","裁員","調降","低於","下滑","停工","跌停","營收減"]
+        rows=[]; seen=set()
+        for item in root.findall(".//item"):
+            title=(item.findtext("title") or "").strip()
+            link=(item.findtext("link") or "").strip()
+            pub=(item.findtext("pubDate") or "").strip()
+            src_el=item.find("source")
+            source=(src_el.text or "").strip() if src_el is not None else "Google News"
+            try:
+                dt=pd.Timestamp(parsedate_to_datetime(pub))
+                if dt.tzinfo is None: dt=dt.tz_localize("UTC")
+                dt=dt.tz_convert("Asia/Taipei")
+            except Exception: continue
+            if dt<cutoff: continue
+            if name_ and name_ not in title and sid_ and sid_ not in title: continue
+            key=re.sub(r"\W+","",title.lower())[:100]
+            if not key or key in seen: continue
+            seen.add(key)
+            pp=sum(w in title for w in pos); nn=sum(w in title for w in neg)
+            emo="偏多" if pp>nn else ("偏空" if nn>pp else "中性")
+            rows.append({"日期":dt.strftime("%m/%d %H:%M"),"情緒":emo,"標題":title,
+                         "來源":source,"連結":link,"_dt":dt})
+        if not rows: return pd.DataFrame(columns=cols)
+        df=pd.DataFrame(rows).sort_values("_dt",ascending=False).head(limit)
+        return df[cols].reset_index(drop=True)
+    except Exception:
+        return pd.DataFrame(columns=cols)
+
+def _v156_render_stock_news(stock_id, stock_name):
+    st.markdown("## 📰 個股近 15 日重要新聞")
+    st.caption("公開新聞彙整｜情緒僅依標題關鍵字輔助分類，不直接等同買賣訊號")
+    news=_v156_stock_news(stock_id,stock_name,15,12)
+    if news.empty:
+        st.info("近 15 日暫未取得與此股票直接相關的公開新聞。")
+        return
+    for _,r in news.iterrows():
+        icon={"偏多":"🟢","中性":"⚪","偏空":"🔴"}.get(r["情緒"],"⚪")
+        st.markdown(f"""<div style="padding:10px 12px;margin:7px 0;border:1px solid rgba(212,175,55,.28);
+        border-radius:12px;background:rgba(8,25,40,.72)">
+        <div style="font-size:.78rem;opacity:.72">{r['日期']} ｜ {r['來源']} ｜ {icon} {r['情緒']}</div>
+        <div style="font-weight:700;margin-top:4px;line-height:1.45">{r['標題']}</div>
+        <div style="margin-top:5px"><a href="{r['連結']}" target="_blank" style="color:#e5bd42;text-decoration:none">查看原文 ↗</a></div>
+        </div>""",unsafe_allow_html=True)
+
+
