@@ -805,7 +805,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 機率模型｜V14")
+    st.markdown("## AI 機率模型｜V15.3")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -896,7 +896,7 @@ def _v13_settle_ledger(sid, price_df):
 
 def _v13_accuracy_panel(sid):
     rows=[x for x in _v13_load_ledger() if str(x.get("stock"))==str(sid)]
-    st.markdown("## AI 實戰驗證｜V14.6")
+    st.markdown("## AI 實戰驗證｜V15.3")
     settled1=[x for x in rows if x.get("p1") is not None and x.get("y1") is not None]
     settled5=[x for x in rows if x.get("p5") is not None and x.get("y5") is not None]
     c1,c2,c3=st.columns(3)
@@ -964,7 +964,7 @@ def _v14_unified_signal(regime, r1, r5, short_score=None, inst_score=None):
 
 def _v14_validation_panel(r1,r5):
     health,reason=_v14_model_health(r1,r5)
-    st.markdown("## 模型自我驗證｜V14.6")
+    st.markdown("## 模型自我驗證｜V15.3")
     a,b,c=st.columns(3)
     a.metric("模型健康度",health)
     a.caption(reason)
@@ -1304,7 +1304,7 @@ def attack_status(short, close, support, resistance, vol_ratio, inst_score=50):
     confirmations += 1 if inst_score>=55 else 0
 
     if short>=78 and confirmations>=3:
-        label="🟢 模型訊號：可買進"
+        label="🟢 模型訊號：符合買進條件"
         reason="短線趨勢、價格突破、量能與籌碼中至少三項同步確認。"
     elif short>=62 and confirmations>=2:
         label="🟡 模型訊號：等待買進"
@@ -1684,7 +1684,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15.2 單一決策源修正版
+    AI ACTION CENTER｜V15.3 決策一致性修正版
     </div>
   <div class="decision-grid">
     <div>
@@ -1695,7 +1695,7 @@ st.markdown(f"""
     <div class="decision-score"><span style="font-size:22px">趨勢強度：</span>{short_label}</div>
   </div>
   <div class="level-grid">
-    <div class="levelbox"><div class="small">突破確認價</div><div class="level">{breakout:.2f}</div><div class="small">突破且量能同步增強，再重新確認進攻訊號</div></div>
+    <div class="levelbox"><div class="small">突破加強確認價</div><div class="level">{breakout:.2f}</div><div class="small">若後續突破且量能同步增強，視為更強的加碼／確認條件</div></div>
     <div class="levelbox"><div class="small">拉回觀察區</div><div class="level">{pull_lo:.2f} ～ {pull_hi:.2f}</div><div class="small">回測止穩且技術轉強，可形成另一種轉強劇本</div></div>
     <div class="levelbox"><div class="small">轉弱警戒</div><div class="level">{weak:.2f}</div><div class="small">跌破後目前短線劇本失效，重新評估</div></div>
   </div>
@@ -1910,7 +1910,7 @@ v1311_invalidation_text = (
 )
 
 
-st.markdown("## V15.2 統一決策中心")
+st.markdown("## V15.3 統一決策中心")
 
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
