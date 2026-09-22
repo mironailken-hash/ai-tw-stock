@@ -1162,8 +1162,8 @@ dt_score = int(max(0,min(100, dt_score + _v7_event["score"]*0.45)))
 _v7_up_prob = calibrated_probability_proxy(dt_score, _v7_event["score"], _v7_completeness)
 _v7_down_prob = round(100-_v7_up_prob,1)
 # V8.2：所有 UI 會用到的機率文字先初始化，避免先顯示後定義造成 NameError。
-_v8_day_up_txt=f"{_v7_up_prob:.1f}%" if _v8_prob_ok else "資料不足"
-_v8_day_down_txt=f"{_v7_down_prob:.1f}%" if _v8_prob_ok else "—"
+_v8_day_up_txt="偏多" if (_v8_prob_ok and _v7_up_prob>=55) else ("偏空" if (_v8_prob_ok and _v7_up_prob<=45) else ("中性" if _v8_prob_ok else "資料不足"))
+_v8_day_down_txt="模型傾向" if _v8_prob_ok else "—"
 _v9_session,_v9_session_label=v9_market_session()
 # 盤中機率只在盤中且成功取得盤中行情時顯示。
 _v9_has_live = bool(rt and pd.notna(rt_price))
@@ -1194,8 +1194,8 @@ _v8_swing_down_txt="—"
 _v7_swing_base = max(0,min(100, short*0.55 + mid*0.25 + inst_score*0.20))
 _v7_swing_up = calibrated_probability_proxy(_v7_swing_base, _v7_event["score"]*0.7, _v7_completeness)
 _v7_swing_down = round(100-_v7_swing_up,1)
-_v8_swing_up_txt=f"{_v7_swing_up:.1f}%" if _v8_prob_ok else "資料不足"
-_v8_swing_down_txt=f"{_v7_swing_down:.1f}%" if _v8_prob_ok else "—"
+_v8_swing_up_txt="偏多" if (_v8_prob_ok and _v7_swing_up>=55) else ("偏空" if (_v8_prob_ok and _v7_swing_up<=45) else ("中性" if _v8_prob_ok else "資料不足"))
+_v8_swing_down_txt="模型傾向" if _v8_prob_ok else "—"
 
 
 
@@ -1229,7 +1229,7 @@ mid_label=_v9_strength_label(mid)
 long_label=_v9_strength_label(long)
 m2.metric("短線強度",f"{short_label}")
 m3.metric("量能比",f"{vol_ratio:.2f}x")
-m4.metric("AI 綜合訊號",f"{overall:.0f}%")
+m4.metric("AI 綜合判斷",overall_label)
 
 # 首屏決策卡：先回答「現在是否具備短線進攻條件」
 if short >= 78 and close >= resistance and vol_ratio >= 1.2:
@@ -1274,7 +1274,7 @@ st.markdown(f"""
 st.markdown("""
 <div class="v7-prob-legend">
 <b>機率顯示說明：</b> 本頁不再顯示「分數／100」。
-所有 AI 判斷數值統一顯示為「預估機率 %」；股價、實際漲跌幅、成交量、支撐／壓力仍維持市場原始單位。
+AI 模型目前只顯示方向與狀態，不把模型分數包裝成機率；股價與實際漲跌幅仍維持市場原始單位。
 </div>
 """, unsafe_allow_html=True)
 
@@ -1291,12 +1291,12 @@ if not _v9_has_live:
     </div>
     """,unsafe_allow_html=True)
 
-# ===== V9 真機率規則 =====
+# ===== V9.7 機率誠信規則 =====
 st.markdown("""
 <div class="v9-prob-rule">
- <b>V9 真機率規則</b>｜畫面中的「%」只用於有明確結果定義的預估機率或實際市場漲跌幅。
+ <b>V9.7 機率誠信規則</b>｜畫面中的「%」目前只保留實際市場百分比資料；未完成歷史回測與校準的 AI 預測不顯示 %。
  技術、法人、風險、資料完整度等內部模型因素不再以百分比冒充機率。
- <br><span>目前只有具明確事件定義的預測可顯示 %，並標示 Beta；技術、法人、市場、風險與趨勢分數一律只顯示文字狀態。完成歷史回測與校準前，不宣稱為已驗證勝率。</span>
+ <br><span>技術、法人、市場、風險、趨勢及 Beta 預測一律只顯示文字狀態；完成歷史回測與機率校準後，才啟用 AI 機率百分比。</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1349,13 +1349,13 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V9.6 百億機率純化版
+    AI ACTION CENTER｜V9.7 百億機率誠信版
     </div>
   <div class="decision-grid">
     <div>
       <div class="decision-status">{status}</div>
       <div class="decision-note">{status_reason}</div>
-      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜條件確認 {confirmations/4*100:.0f}%</div>
+      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜條件確認 {confirmations}/4</div>
     </div>
     <div class="decision-score"><span style="font-size:22px">趨勢強度：</span>{short_label}</div>
   </div>
@@ -1370,7 +1370,7 @@ st.markdown(f"""
 st.markdown(f"""
 <div class="panel">
 <div class="kicker">FINAL SUMMARY｜市場總結</div>
-<div style="font-size:25px;font-weight:900">{overall_icon} {overall_label}｜AI 上漲機率 {overall:.0f}%</div>
+<div style="font-size:25px;font-weight:900">{overall_icon} AI 綜合判斷｜{overall_label}</div>
 <div class="action-sub">短線目前為「{status.replace("🚀 ","").replace("🟢 ","").replace("🟡 ","").replace("⚠️ ","").replace("🔴 ","")}」。
 重點不是預測哪一天一定上漲，而是等待價格、量能與技術條件觸發後再更新訊號。</div>
 </div>
@@ -1384,7 +1384,7 @@ for col,title,score,period in zip([c1,c2,c3],["短線","中線","長線"],[short
     with col:
         st.markdown(f"""<div class="panel"><div class="kicker">{period}</div>
         <div style="font-size:24px;font-weight:900">{ico} {title}｜{lab}</div>
-        <div class="gold" style="font-size:25px;font-weight:900">上漲機率 {score:.0f}%</div></div>""",unsafe_allow_html=True)
+        <div class="gold" style="font-size:22px;font-weight:900">趨勢狀態｜{lab}</div></div>""",unsafe_allow_html=True)
 
 st.markdown("### 關鍵價位")
 a,b,c,e=st.columns(4)
@@ -1406,7 +1406,7 @@ if own=="已持有" and cost>0:
 st.markdown("### AI 模型面板")
 st.markdown(f"""<div class="panel">
 <div class="kicker">MODEL CONSENSUS</div>
-<div style="font-size:26px;font-weight:900">{overall_icon} AI 綜合判斷：{overall:.0f}%｜{overall_label}</div>
+<div style="font-size:26px;font-weight:900">{overall_icon} AI 綜合判斷｜{overall_label}</div>
 </div>""",unsafe_allow_html=True)
 models=[("技術面因素",tech),("法人籌碼因素",inst_score),("市場環境因素",heat),("風險因素",100-risk)]
 mc=st.columns(4)
@@ -1414,8 +1414,7 @@ for col,(title,score) in zip(mc,models):
     lab,ico=trend_label(score)
     with col:
         st.markdown(f"""<div class="panel"><div class="kicker">{title}</div>
-        <div style="font-size:25px;font-weight:900">上漲機率 {score:.0f}%</div>
-        <div>{ico} {lab}</div></div>""",unsafe_allow_html=True)
+        <div style="font-size:25px;font-weight:900">{ico} {lab}</div></div>""",unsafe_allow_html=True)
 
 st.markdown("""
 <div class="section-pro">
