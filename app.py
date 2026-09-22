@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V16.1")
+    st.markdown("## AI 條件機率｜V16.2")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V16.1 Yahoo直連＋多來源診斷版
+    AI ACTION CENTER｜V16.2 媒體擴充＋公告分流版
     </div>
   <div class="decision-grid">
     <div>
@@ -3033,5 +3033,208 @@ try:
 except Exception:
     try: _v161_name=name
     except Exception: _v161_name=""
-_v161_render(sid,_v161_name)
+# V16.2 replaces V16.1 renderer
+
+
+# ===== V16.2：Yahoo + CTWANT + 風傳媒/風生活 + UDN/經濟日報 =====
+from urllib.parse import urljoin as _v162_urljoin
+
+_V162_MEDIA = [
+    ("CTWANT","https://www.ctwant.com/search?q={q}","一般媒體"),
+    ("風傳媒／風生活","https://www.storm.mg/site-search/result?q={q}","一般媒體"),
+    ("UDN／經濟日報","https://money.udn.com/search/result/1001/{q}/","專業財經"),
+]
+
+def _v162_parse_date(txt):
+    """Extract an actual article date/time when present. Never substitute fetch time."""
+    txt=str(txt or "")
+    patterns=[
+        r'(20\d{2})[-/.年](\d{1,2})[-/.月](\d{1,2})(?:日)?\s*(\d{1,2})?:?(\d{2})?',
+        r'(\d{1,2})/(\d{1,2})\s+(\d{1,2}):(\d{2})'
+    ]
+    m=re.search(patterns[0],txt)
+    if m:
+        y,mo,d,hh,mm=m.groups()
+        try: return pd.Timestamp(year=int(y),month=int(mo),day=int(d),
+                                 hour=int(hh or 0),minute=int(mm or 0),tz="Asia/Taipei")
+        except: pass
+    m=re.search(patterns[1],txt)
+    if m:
+        mo,d,hh,mm=m.groups()
+        try:
+            now=pd.Timestamp.now(tz="Asia/Taipei")
+            return pd.Timestamp(year=now.year,month=int(mo),day=int(d),
+                                hour=int(hh),minute=int(mm),tz="Asia/Taipei")
+        except: pass
+    return None
+
+@st.cache_data(ttl=900, show_spinner=False)
+def _v162_media_search(stock_id,stock_name,days=15):
+    name=str(stock_name or "").strip()
+    sid=str(stock_id or "").strip()
+    cutoff=pd.Timestamp.now(tz="Asia/Taipei")-pd.Timedelta(days=days)
+    rows=[]; diag=[]
+
+    for label,template,cat in _V162_MEDIA:
+        try:
+            url=template.format(q=quote_plus(name))
+            r=requests.get(url,timeout=12,headers={
+                "User-Agent":"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/130 Safari/537.36",
+                "Accept-Language":"zh-TW,zh;q=0.9"
+            })
+            diag.append((label,r.status_code))
+            if r.status_code!=200: continue
+            html=r.text
+
+            # General anchor parser: retain only links/titles that mention stock name/ticker.
+            for href,inner in re.findall(r'<a[^>]+href=["\']([^"\']+)["\'][^>]*>(.*?)</a>',html,re.I|re.S):
+                title=_v161_clean_html(inner)
+                if len(title)<8: continue
+                if name not in title and sid not in title: continue
+                full=_v162_urljoin(r.url,href)
+                if not full.startswith("http"): continue
+
+                # Date from nearby HTML around the anchor when possible.
+                pos=html.find(href)
+                near=html[max(0,pos-500):pos+1200] if pos>=0 else ""
+                dt=_v162_parse_date(_v161_clean_html(near))
+                if dt is not None and dt<cutoff: continue
+                rows.append({"標題":title,"來源":label,"連結":full,
+                             "_dt":dt,"_category":cat,"_direct":True})
+        except Exception:
+            diag.append((label,"ERR"))
+    return rows,diag
+
+def _v162_classify(title,source,hint=""):
+    txt=f"{title} {source}"
+    if any(k in txt for k in ["【公告】","〖公告〗","重大訊息","公開資訊觀測站","公告董事會","公告本公司","代子公司"]):
+        return "官方重大訊息"
+    if any(k in txt for k in ["凱基","群益","元大證券","富邦證券","國泰證券","永豐投顧",
+                              "統一證券","兆豐證券","投顧","目標價","研究報告"]):
+        return "券商研究"
+    if "UDN" in source or "經濟日報" in source or "鉅亨" in source or "MoneyDJ" in source:
+        return "專業財經"
+    if "Yahoo" in source:
+        return "財經新聞"
+    if "CMoney" in source:
+        return "市場資訊"
+    if any(k in source for k in ["CTWANT","風傳媒","風生活"]):
+        return "一般媒體"
+    return hint if hint in _V158_CATEGORIES else _v158_category(title,source)
+
+@st.cache_data(ttl=900,show_spinner=False)
+def _v162_engine(stock_id,stock_name,days=15):
+    sid=str(stock_id or "").strip(); name=str(stock_name or "").strip()
+    cutoff=pd.Timestamp.now(tz="Asia/Taipei")-pd.Timedelta(days=days)
+    pool=[]; diag=[]
+
+    # Yahoo direct
+    yr,ys=_v161_yahoo_direct(sid,days)
+    pool.extend(yr); diag.extend(ys)
+
+    # CTWANT / Storm / UDN direct search pages
+    mr,md=_v162_media_search(sid,name,days)
+    pool.extend(mr); diag.extend(md)
+
+    # Google News backup
+    try:
+        gd=_v160_multisource_news(sid,name,days)
+        if gd is not None and not gd.empty:
+            for _,r in gd.iterrows():
+                pool.append({"標題":r.get("標題",""),"來源":r.get("來源","Google News"),
+                             "連結":r.get("連結",""),"_dt":r.get("_dt"),
+                             "_category":r.get("分類",""),"_direct":r.get("相關度")=="直接相關"})
+            diag.append(("Google News備援",f"{len(gd)}則"))
+        else: diag.append(("Google News備援","0則"))
+    except Exception:
+        diag.append(("Google News備援","ERR"))
+
+    out=[]; seen=set(); official_count=0
+    for x in pool:
+        title=str(x.get("標題","")).strip()
+        if not title: continue
+        key=_v157_normalize_title(title)
+        sig=key[:55]
+        if not sig or sig in seen: continue
+
+        source=str(x.get("來源","")).strip() or "公開新聞"
+        cat=_v162_classify(title,source,x.get("_category",""))
+        # Limit official announcements so they don't drown out actual news.
+        if cat=="官方重大訊息" and official_count>=5: continue
+
+        dt=x.get("_dt")
+        # Critical fix: unknown date remains unknown; do NOT fake current fetch time.
+        if dt is not None and not pd.isna(dt):
+            try:
+                dt=pd.Timestamp(dt)
+                if dt.tzinfo is None: dt=dt.tz_localize("Asia/Taipei")
+                if dt<cutoff: continue
+                date_txt=dt.strftime("%m/%d %H:%M")
+            except:
+                dt=None; date_txt="日期未取得"
+        else:
+            date_txt="日期未取得"
+
+        direct=bool(x.get("_direct")) or name in title or sid in title
+        # Exclude weak backup items not visibly tied to this stock.
+        if not direct and source=="Google News": continue
+
+        seen.add(sig)
+        if cat=="官方重大訊息": official_count+=1
+        stars,_=_v157_news_priority(title,source)
+        if cat=="官方重大訊息": stars=5
+        elif cat in ("專業財經","券商研究"): stars=max(4,stars)
+
+        out.append({"日期":date_txt,"分類":cat,"重要度":int(stars),
+                    "情緒":_v157_sentiment(title),"標題":title,"來源":source,
+                    "連結":x.get("連結",""),"相關度":"直接相關" if direct else "延伸相關",
+                    "_dt":dt})
+    df=pd.DataFrame(out)
+    if not df.empty:
+        df["_sort"]=df["_dt"].apply(lambda x: pd.Timestamp(x).timestamp() if x is not None and not pd.isna(x) else 0)
+        df=df.sort_values(["重要度","_sort"],ascending=[False,False]).drop(columns="_sort").head(60)
+    return df.reset_index(drop=True) if not df.empty else df,diag
+
+def _v162_render(stock_id,stock_name):
+    news,diag=_v162_engine(stock_id,stock_name,15)
+    st.markdown(f"## 📰 {stock_id} {stock_name}｜近 15 日新聞")
+    st.caption("Yahoo股市＋CTWANT＋風傳媒／風生活＋UDN／經濟日報＋Google News備援｜公告最多5則")
+
+    cats=_V158_CATEGORIES
+    counts={c:int((news["分類"]==c).sum()) if news is not None and not news.empty else 0 for c in cats}
+    a=st.columns(3)
+    for col,cat in zip(a,cats[:3]): col.metric(cat,f"{counts[cat]} 則")
+    b=st.columns(3)
+    for col,cat in zip(b,cats[3:]): col.metric(cat,f"{counts[cat]} 則")
+
+    with st.expander("新聞來源連線診斷",expanded=False):
+        for src,stat in diag: st.write(f"{src}：{stat}")
+
+    if news is None or news.empty:
+        st.warning("目前各來源未回傳可用新聞；不代表網路上沒有相關新聞。")
+        return
+
+    for cat in cats:
+        part=news[news["分類"]==cat]
+        with st.expander(f"{cat}｜{len(part)} 則",expanded=(cat!="官方重大訊息" and len(part)>0)):
+            if part.empty:
+                st.caption("此分類目前沒有取得資料。"); continue
+            for _,r in part.iterrows():
+                stars="★"*int(r["重要度"])+"☆"*(5-int(r["重要度"]))
+                emo={"偏多":"🟢","中性":"⚪","偏空":"🔴"}.get(r["情緒"],"⚪")
+                rel="🎯" if r["相關度"]=="直接相關" else "🔎"
+                st.markdown(f"""<div style="padding:10px 12px;margin:7px 0;border:1px solid rgba(212,175,55,.28);
+                border-radius:12px;background:rgba(8,25,40,.72)">
+                <div style="font-size:.76rem;opacity:.76">{r['日期']} ｜ {rel} {r['相關度']} ｜ {emo} {r['情緒']} ｜ {r['來源']}</div>
+                <div style="color:#e9c54d;font-size:.80rem;margin-top:3px">{stars}</div>
+                <div style="font-weight:720;margin-top:4px;line-height:1.45">{r['標題']}</div>
+                <div style="margin-top:5px"><a href="{r['連結']}" target="_blank" style="color:#e5bd42;text-decoration:none">查看原文 ↗</a></div>
+                </div>""",unsafe_allow_html=True)
+
+try:
+    _v162_name=stock_name
+except Exception:
+    try:_v162_name=name
+    except Exception:_v162_name=""
+_v162_render(sid,_v162_name)
 
