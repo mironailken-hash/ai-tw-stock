@@ -1296,7 +1296,7 @@ st.markdown("""
 <div class="v9-prob-rule">
  <b>V9 真機率規則</b>｜畫面中的「%」只用於有明確結果定義的預估機率或實際市場漲跌幅。
  技術、法人、風險、資料完整度等內部模型因素不再以百分比冒充機率。
- <br><span>目前預測機率仍標示 Beta；完成歷史回測與校準前，不宣稱為已驗證勝率。</span>
+ <br><span>目前只有具明確事件定義的預測可顯示 %，並標示 Beta；技術、法人、市場、風險與趨勢分數一律只顯示文字狀態。完成歷史回測與校準前，不宣稱為已驗證勝率。</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1349,7 +1349,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V9.2 百億真機率決策
+    AI ACTION CENTER｜V9.6 百億機率純化版
     </div>
   <div class="decision-grid">
     <div>
