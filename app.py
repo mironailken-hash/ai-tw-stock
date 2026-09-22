@@ -3,6 +3,15 @@ import pandas as pd
 import numpy as np
 import requests
 import plotly.graph_objects as go
+try:
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+    from sklearn.pipeline import Pipeline
+    from sklearn.metrics import brier_score_loss
+    SKLEARN_OK = True
+except Exception:
+    SKLEARN_OK = False
+
 import xml.etree.ElementTree as ET
 import base64
 from pathlib import Path
@@ -657,6 +666,114 @@ def realtime_quote(sid):
     return {}
 
 
+
+
+def _v10_features(df):
+    """Create strictly backward-looking daily features."""
+    x=df.copy().sort_values("date").reset_index(drop=True)
+    c=x["close"].astype(float)
+    h=x["max"].astype(float) if "max" in x else c
+    l=x["min"].astype(float) if "min" in x else c
+    v=x["Trading_Volume"].astype(float) if "Trading_Volume" in x else x.get("volume", 0)
+    v=pd.Series(v, index=x.index).astype(float)
+    ret=c.pct_change()
+    x["f_ret1"]=ret
+    x["f_ret5"]=c.pct_change(5)
+    x["f_ret20"]=c.pct_change(20)
+    x["f_ma5"]=c/c.rolling(5).mean()-1
+    x["f_ma20"]=c/c.rolling(20).mean()-1
+    x["f_vol20"]=ret.rolling(20).std()
+    x["f_range"]=(h-l)/c.replace(0,np.nan)
+    x["f_volratio"]=v/v.rolling(20).mean()
+    x["y1"]=(c.shift(-1)>c).astype(float)
+    x["y5"]=(c.shift(-5)>c).astype(float)
+    return x
+
+def _v10_walk_forward_probability(df, horizon=1):
+    """Out-of-sample walk-forward logistic probability + calibration diagnostics."""
+    if not SKLEARN_OK:
+        return None
+    d=_v10_features(df)
+    feats=["f_ret1","f_ret5","f_ret20","f_ma5","f_ma20","f_vol20","f_range","f_volratio"]
+    target="y1" if horizon==1 else "y5"
+    d=d.dropna(subset=feats).reset_index(drop=True)
+    if len(d) < 260:
+        return None
+
+    # Last horizon rows have unknown future outcome and are prediction-only.
+    train=d.iloc[:-horizon].copy()
+    if len(train) < 250 or train[target].nunique()<2:
+        return None
+
+    # Walk-forward validation: no future rows may enter an earlier fit.
+    start=max(180, int(len(train)*0.55))
+    probs=[]; actual=[]
+    step=max(10, min(20, (len(train)-start)//8 if len(train)>start else 10))
+    for end in range(start, len(train), step):
+        tr=train.iloc[:end]
+        te=train.iloc[end:min(end+step,len(train))]
+        if len(te)==0 or tr[target].nunique()<2:
+            continue
+        model=Pipeline([
+            ("scale",StandardScaler()),
+            ("lr",LogisticRegression(max_iter=1000, class_weight="balanced"))
+        ])
+        model.fit(tr[feats],tr[target].astype(int))
+        probs.extend(model.predict_proba(te[feats])[:,1].tolist())
+        actual.extend(te[target].astype(int).tolist())
+
+    if len(actual) < 50:
+        return None
+
+    final=Pipeline([
+        ("scale",StandardScaler()),
+        ("lr",LogisticRegression(max_iter=1000, class_weight="balanced"))
+    ])
+    final.fit(train[feats],train[target].astype(int))
+    latest=d.iloc[[-1]]
+    p=float(final.predict_proba(latest[feats])[:,1][0])
+
+    brier=float(brier_score_loss(actual,probs))
+    # Simple reliability gap across broad probability bins.
+    bins=pd.cut(pd.Series(probs), bins=[0,.4,.5,.6,1], include_lowest=True)
+    cal=pd.DataFrame({"bin":bins,"p":probs,"y":actual}).groupby("bin",observed=True).agg(
+        predicted=("p","mean"), actual=("y","mean"), n=("y","size")
+    )
+    valid=cal[cal["n"]>=10]
+    gap=float((valid["predicted"]-valid["actual"]).abs().mul(valid["n"]).sum()/valid["n"].sum()) if len(valid) else np.nan
+    status="良好" if (brier<=0.23 and (pd.isna(gap) or gap<=0.10)) else ("普通" if brier<=0.26 else "不足")
+    return {
+        "prob":p, "n":len(actual), "brier":brier,
+        "cal_gap":gap, "status":status,
+        "period_start":str(train["date"].iloc[0])[:10],
+        "period_end":str(train["date"].iloc[-1])[:10],
+        "horizon":horizon
+    }
+
+def _v10_probability_panel(df):
+    """Render only probabilities that passed minimum out-of-sample validation."""
+    r1=_v10_walk_forward_probability(df,1)
+    r5=_v10_walk_forward_probability(df,5)
+    st.markdown("## AI 真實機率｜V10")
+    st.caption("機率來自歷史日線的時間序列走步驗證；技術分數、法人分數與風險分數不會被當成機率。")
+    c1,c2=st.columns(2)
+    with c1:
+        if r1:
+            st.metric("下一交易日上漲機率", f"{r1['prob']*100:.1f}%")
+            st.caption(f"樣本 {r1['n']}｜Brier {r1['brier']:.3f}｜校準狀態：{r1['status']}")
+        else:
+            st.metric("下一交易日上漲機率","資料不足")
+            st.caption("歷史樣本或驗證資料不足，不提供百分比。")
+    with c2:
+        if r5:
+            st.metric("未來第5交易日高於目前收盤機率", f"{r5['prob']*100:.1f}%")
+            st.caption(f"樣本 {r5['n']}｜Brier {r5['brier']:.3f}｜校準狀態：{r5['status']}")
+        else:
+            st.metric("5日上漲機率","資料不足")
+            st.caption("歷史樣本或驗證資料不足，不提供百分比。")
+    if r1 or r5:
+        st.caption("這是統計模型的條件機率估計，不代表保證結果；市場結構改變時，歷史校準可能失效。")
+    return r1,r5
 
 def v9_market_session():
     """台灣股市時段：直接以 Unix time 加 UTC+8 計算。"""
@@ -1349,7 +1466,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V9.7 百億機率誠信版
+    AI ACTION CENTER｜V10 百億真實機率引擎
     </div>
   <div class="decision-grid">
     <div>
@@ -1385,6 +1502,8 @@ for col,title,score,period in zip([c1,c2,c3],["短線","中線","長線"],[short
         st.markdown(f"""<div class="panel"><div class="kicker">{period}</div>
         <div style="font-size:24px;font-weight:900">{ico} {title}｜{lab}</div>
         <div class="gold" style="font-size:22px;font-weight:900">趨勢狀態｜{lab}</div></div>""",unsafe_allow_html=True)
+
+_v10_p1,_v10_p5=_v10_probability_panel(price)
 
 st.markdown("### 關鍵價位")
 a,b,c,e=st.columns(4)
