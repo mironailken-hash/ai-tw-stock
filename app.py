@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import requests
 import pandas as pd
 import numpy as np
@@ -895,7 +896,7 @@ def _v13_settle_ledger(sid, price_df):
 
 def _v13_accuracy_panel(sid):
     rows=[x for x in _v13_load_ledger() if str(x.get("stock"))==str(sid)]
-    st.markdown("## AI 實戰驗證｜V14")
+    st.markdown("## AI 實戰驗證｜V14.1")
     settled1=[x for x in rows if x.get("p1") is not None and x.get("y1") is not None]
     settled5=[x for x in rows if x.get("p5") is not None and x.get("y5") is not None]
     c1,c2,c3=st.columns(3)
@@ -963,7 +964,7 @@ def _v14_unified_signal(regime, r1, r5, short_score=None, inst_score=None):
 
 def _v14_validation_panel(r1,r5):
     health,reason=_v14_model_health(r1,r5)
-    st.markdown("## 模型自我驗證｜V14")
+    st.markdown("## 模型自我驗證｜V14.1")
     a,b,c=st.columns(3)
     a.metric("模型健康度",health)
     a.caption(reason)
@@ -1611,7 +1612,74 @@ else:
     verdict_note = "短線結構偏弱，優先等待趨勢修復，而不是追價。"
 
 
+
+def _v141_live_quote_component(stock_id, height=150):
+    """
+    Browser-side isolated live quote.
+    Only this iframe refreshes; Streamlit/Python page does not rerun.
+    TWSE MIS is tried for listed and OTC market codes.
+    """
+    sid_js = str(stock_id).replace("\\","").replace("'","").replace('"',"")
+    html = f"""
+    <div id="ken-live" style="
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+      background:linear-gradient(135deg,#07101d,#101b2a);
+      border:1px solid rgba(201,168,92,.45);border-radius:16px;
+      padding:15px 18px;color:#eaf0f6;min-height:105px;">
+      <div style="font-size:12px;color:#c9a85c;letter-spacing:.08em">LIVE QUOTE｜局部即時行情</div>
+      <div style="display:flex;align-items:baseline;gap:12px;margin-top:4px;flex-wrap:wrap">
+        <span id="lq-name" style="font-size:18px;font-weight:700">{sid_js}</span>
+        <span id="lq-price" style="font-size:30px;font-weight:800">取得行情中…</span>
+        <span id="lq-change" style="font-size:16px"></span>
+      </div>
+      <div id="lq-ohlv" style="font-size:13px;color:#b9c3cf;margin-top:6px"></div>
+      <div id="lq-time" style="font-size:11px;color:#7f8b99;margin-top:5px">此區獨立更新，不重新整理整個分析頁面</div>
+    </div>
+    <script>
+    const sid='{sid_js}';
+    const el=(x)=>document.getElementById(x);
+    const n=(v)=>{{const x=parseFloat(v);return Number.isFinite(x)?x:null;}};
+    const fmt=(x,d=2)=>x===null?'—':x.toLocaleString('zh-TW',{{minimumFractionDigits:d,maximumFractionDigits:d}});
+    async function getOne(ex){{
+      const url='https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch='+ex+'_'+sid+'.tw&json=1&delay=0&_='+Date.now();
+      const r=await fetch(url,{{cache:'no-store'}});
+      if(!r.ok) throw new Error('HTTP '+r.status);
+      const j=await r.json();
+      return (j.msgArray&&j.msgArray.length)?j.msgArray[0]:null;
+    }}
+    async function tick(){{
+      try {{
+        let q=await getOne('tse');
+        if(!q || (!q.z && !q.b)) q=await getOne('otc');
+        if(!q) throw new Error('no quote');
+        let px=n(q.z);
+        if(px===null && q.b) px=n(String(q.b).split('_')[0]);
+        const prev=n(q.y), op=n(q.o), hi=n(q.h), lo=n(q.l), vol=n(q.v);
+        const ch=(px!==null&&prev!==null)?px-prev:null;
+        const pct=(ch!==null&&prev)?ch/prev*100:null;
+        el('lq-name').textContent=(q.n||sid)+' '+sid;
+        el('lq-price').textContent=fmt(px);
+        if(ch!==null){{
+          const sign=ch>0?'▲':(ch<0?'▼':'');
+          el('lq-change').textContent=sign+' '+fmt(Math.abs(ch))+' ('+(pct>=0?'+':'')+fmt(pct)+'%)';
+          el('lq-change').style.color=ch>0?'#ff6b6b':(ch<0?'#66a3ff':'#b9c3cf');
+        }}
+        el('lq-ohlv').textContent='開 '+fmt(op)+' ｜ 高 '+fmt(hi)+' ｜ 低 '+fmt(lo)+' ｜ 量 '+fmt(vol,0);
+        const now=new Date();
+        el('lq-time').textContent='● 局部行情更新 '+now.toLocaleTimeString('zh-TW',{{hour12:false}})+' ｜ 每 10 秒嘗試更新；其他分析不重新整理';
+      }} catch(e) {{
+        el('lq-time').textContent='目前瀏覽器無法直接取得即時行情；主分析頁不受影響。';
+      }}
+    }}
+    tick(); setInterval(tick,10000);
+    </script>
+    """
+    components.html(html, height=height, scrolling=False)
+
+
 # ===== V13.9 最上方：即時價格 + AI 當沖雷達 =====
+_v141_live_quote_component(sid)
+
 # 即時價格可盤中刷新；日線真機率模型仍使用已完成日線，避免把跳動報價冒充重新校準的機率。
 rt_state = "🟢 盤中最新行情" if _market_open and rt and pd.notna(rt_price) else "⚪ 非開盤時段／最新取得資料"
 price_source = "TWSE MIS 盤中行情" if (_market_open and rt and pd.notna(rt_price)) else data_mode
@@ -1725,7 +1793,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V14 自我驗證決策系統
+    AI ACTION CENTER｜V14.1 自我驗證決策系統
     </div>
   <div class="decision-grid">
     <div>
@@ -1811,7 +1879,7 @@ v1311_invalidation_text = (
     else "尚未形成有效失效價"
 )
 
-st.markdown("## V14 統一決策中心")
+st.markdown("## V14.1 統一決策中心")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
