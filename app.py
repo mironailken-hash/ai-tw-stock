@@ -500,6 +500,10 @@ border-radius:16px;padding:16px 18px;margin:8px 0 13px}
  padding:10px 14px;margin:8px 0 12px;color:#dce7ef;font-size:12px;line-height:1.65}
 .v9-prob-rule b{color:#f2d56b}.v9-prob-rule span{color:#9fb3c4}
 
+
+.v92-stale{background:rgba(255,184,77,.08);border:1px solid rgba(255,184,77,.35);
+border-radius:10px;padding:9px 12px;margin:8px 0;color:#e8d9b5;font-size:12px}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -652,6 +656,19 @@ def realtime_quote(sid):
             pass
     return {}
 
+
+
+def v9_market_session():
+    """Taiwan market session label. Weekend-aware; exchange holidays remain guarded by quote freshness."""
+    now=datetime.now(ZoneInfo("Asia/Taipei"))
+    if now.weekday()>=5:
+        return "closed","休市"
+    mins=now.hour*60+now.minute
+    if mins < 9*60:
+        return "pre","盤前"
+    if mins <= 13*60+30:
+        return "open","盤中"
+    return "post","盤後"
 
 def market_is_open_tw():
     """台灣集中市場一般交易時段：平日 09:00~13:30；實際休市日由行情是否取得再做第二層判斷。"""
@@ -1142,6 +1159,26 @@ _v7_down_prob = round(100-_v7_up_prob,1)
 # V8.2：所有 UI 會用到的機率文字先初始化，避免先顯示後定義造成 NameError。
 _v8_day_up_txt=f"{_v7_up_prob:.1f}%" if _v8_prob_ok else "資料不足"
 _v8_day_down_txt=f"{_v7_down_prob:.1f}%" if _v8_prob_ok else "—"
+_v9_session,_v9_session_label=v9_market_session()
+# 盤中機率只在盤中且成功取得盤中行情時顯示。
+_v9_has_live = bool(rt and pd.notna(rt_price))
+if _v9_session=="open" and _v9_has_live and _v8_prob_ok:
+    _v9_intraday_title="13:30前"
+    _v9_intraday_up=_v8_day_up_txt
+    _v9_intraday_down=_v8_day_down_txt
+elif _v9_session=="pre":
+    _v9_intraday_title="今日盤前"
+    _v9_intraday_up="開盤後計算"
+    _v9_intraday_down="開盤後計算"
+elif _v9_session=="post":
+    _v9_intraday_title="今日盤後"
+    _v9_intraday_up="盤中預測已停止"
+    _v9_intraday_down="盤中預測已停止"
+else:
+    _v9_intraday_title=_v9_session_label
+    _v9_intraday_up="即時行情不足"
+    _v9_intraday_down="即時行情不足"
+
 
 # 波段值在稍後正式計算；先給安全預設，避免任何前段 UI 引用失敗。
 _v8_swing_up_txt="資料不足"
@@ -1220,7 +1257,7 @@ st.markdown(f"""
   <div class="v6-live-card">
     <div class="kicker">SUPER DAY TRADE｜百億超級當沖雷達</div>
     <div class="v6-dt">{dt_signal}</div>
-    <div class="v7-prob">13:30前上漲預估機率（Beta） <b>{_v8_day_up_txt}</b>　｜　下跌預估機率（Beta） <b>{_v8_day_down_txt}</b></div>
+    <div class="v7-prob">{_v9_intraday_title}上漲預估機率（Beta） <b>{_v9_intraday_up}</b>　｜　下跌預估機率（Beta） <b>{_v9_intraday_down}</b></div>
     <div class="v6-score">方向：{dt_direction}｜資料狀態 {("完整" if _v7_completeness>=0.85 else ("部分缺失" if _v7_completeness>=0.55 else "不足"))}</div>
     <div class="v6-meta">{dt_reason}<br>盤中防守：{dt_def:.2f}｜壓力：{dt_res:.2f}</div>
   </div>
@@ -1237,6 +1274,17 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
+
+
+# V9.2 行情時段與資料新鮮度提示
+if not _v9_has_live:
+    st.markdown(f"""
+    <div class="v92-stale">
+      ⚠️ 目前為<strong>{_v9_session_label}</strong>或尚未取得今日盤中行情。
+      畫面價格來源：{price_source}｜{update_text}。
+      本系統不使用前一交易日收盤價冒充今日盤中機率。
+    </div>
+    """,unsafe_allow_html=True)
 
 # ===== V9 真機率規則 =====
 st.markdown("""
@@ -1296,7 +1344,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V9 百億真機率決策
+    AI ACTION CENTER｜V9.2 百億真機率決策
     </div>
   <div class="decision-grid">
     <div>
