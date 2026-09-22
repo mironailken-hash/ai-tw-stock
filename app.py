@@ -659,19 +659,17 @@ def realtime_quote(sid):
 
 
 def v9_market_session():
-    """Taiwan market session label. Weekend-aware; exchange holidays remain guarded by quote freshness."""
-    try:
-        now=datetime.now(ZoneInfo("Asia/Taipei"))
-    except AttributeError:
-        now=datetime.datetime.now(ZoneInfo("Asia/Taipei"))
-    if now.weekday()>=5:
-        return "closed","休市"
-    mins=now.hour*60+now.minute
-    if mins < 9*60:
-        return "pre","盤前"
-    if mins <= 13*60+30:
-        return "open","盤中"
-    return "post","盤後"
+    """台灣股市時段。完全避開 datetime 名稱衝突。"""
+    _dtmod = __import__("datetime")
+    now = _dtmod.datetime.now(ZoneInfo("Asia/Taipei"))
+    if now.weekday() >= 5:
+        return "closed", "休市"
+    mins = now.hour * 60 + now.minute
+    if mins < 9 * 60:
+        return "pre", "盤前"
+    if mins <= 13 * 60 + 30:
+        return "open", "盤中"
+    return "post", "盤後"
 
 def market_is_open_tw():
     """台灣集中市場一般交易時段：平日 09:00~13:30；實際休市日由行情是否取得再做第二層判斷。"""
