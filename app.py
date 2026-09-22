@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V15.8")
+    st.markdown("## AI 條件機率｜V15.9")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V15.8 六大新聞來源版
+    AI ACTION CENTER｜V15.9 新聞擴大搜尋版
     </div>
   <div class="decision-grid">
     <div>
@@ -2482,12 +2482,188 @@ def _v158_render(stock_id, stock_name):
                 )
 
 # 函式全部定義完成後才執行，避免前版 NameError
+
+
+# ===== V15.9：新聞擴大搜尋引擎 =====
+@st.cache_data(ttl=900, show_spinner=False)
+def _v159_google_news_search(stock_id, stock_name, days=15, per_query=25):
+    """多組 Google News RSS 搜尋，提高個股新聞召回率。"""
+    cols = ["日期","標題","來源","連結","_dt","搜尋組"]
+    try:
+        sid_ = str(stock_id or "").strip()
+        name_ = str(stock_name or "").strip()
+        if not sid_ and not name_:
+            return pd.DataFrame(columns=cols)
+
+        now = pd.Timestamp.now(tz="Asia/Taipei")
+        cutoff = now - pd.Timedelta(days=days)
+        after = cutoff.strftime("%Y-%m-%d")
+
+        queries = []
+        if name_:
+            queries += [
+                f'"{name_}" after:{after}',
+                f'"{name_}" 財經 after:{after}',
+                f'"{name_}" 營收 OR 財報 OR 法說 after:{after}',
+                f'"{name_}" 外資 OR 投信 OR 法人 after:{after}',
+                f'"{name_}" 券商 OR 目標價 OR 研究 after:{after}',
+                f'"{name_}" 股價 OR 盤中 OR 籌碼 after:{after}',
+            ]
+        if sid_:
+            queries += [
+                f'{sid_} {name_} after:{after}',
+                f'{sid_} 股票 after:{after}',
+            ]
+
+        # Sector expansion for common Taiwan-stock news vocabulary.
+        if name_:
+            queries.append(f'"{name_}" AI OR 半導體 OR PCB OR 電子 OR 伺服器 after:{after}')
+
+        all_rows = []
+        for q in queries:
+            try:
+                url = ("https://news.google.com/rss/search?q=" + quote_plus(q)
+                       + "&hl=zh-TW&gl=TW&ceid=TW:zh-Hant")
+                rr = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
+                rr.raise_for_status()
+                root = ET.fromstring(rr.content)
+                count = 0
+                for item in root.findall(".//item"):
+                    if count >= per_query:
+                        break
+                    title = (item.findtext("title") or "").strip()
+                    link = (item.findtext("link") or "").strip()
+                    pub = (item.findtext("pubDate") or "").strip()
+                    src_el = item.find("source")
+                    source = (src_el.text or "").strip() if src_el is not None else "Google News"
+                    try:
+                        dt = pd.Timestamp(parsedate_to_datetime(pub))
+                        if dt.tzinfo is None:
+                            dt = dt.tz_localize("UTC")
+                        dt = dt.tz_convert("Asia/Taipei")
+                    except Exception:
+                        continue
+                    if dt < cutoff:
+                        continue
+
+                    # Relevance: direct company/ticker match = strongest.
+                    direct = (name_ and name_ in title) or (sid_ and sid_ in title)
+                    # For expanded queries, Google already matched content/query; keep but label lower relevance.
+                    relevance = 3 if direct else 1
+                    all_rows.append({
+                        "日期": dt.strftime("%m/%d %H:%M"),
+                        "標題": title,
+                        "來源": source or "Google News",
+                        "連結": link,
+                        "_dt": dt,
+                        "搜尋組": q,
+                        "_rel": relevance,
+                    })
+                    count += 1
+            except Exception:
+                continue
+
+        if not all_rows:
+            return pd.DataFrame(columns=cols)
+
+        df = pd.DataFrame(all_rows)
+        # Normalize and deduplicate syndicated headlines.
+        df["_key"] = df["標題"].astype(str).map(_v157_normalize_title)
+        df = df.sort_values(["_rel","_dt"], ascending=[False,False])
+        df = df.drop_duplicates("_key", keep="first")
+
+        # Keep a broad pool; classification layer will rank it.
+        return df.head(80).reset_index(drop=True)
+    except Exception:
+        return pd.DataFrame(columns=cols)
+
+def _v159_prepare(stock_id, stock_name):
+    base = _v159_google_news_search(stock_id, stock_name, 15, 25)
+    if base is None or base.empty:
+        return pd.DataFrame(columns=["日期","分類","重要度","情緒","標題","來源","連結","相關度"])
+
+    rows = []
+    for _, r in base.iterrows():
+        title = str(r.get("標題","")).strip()
+        source = str(r.get("來源","")).strip()
+        cat = _v158_category(title, source)
+        stars, _ = _v157_news_priority(title, source)
+        if cat == "官方重大訊息":
+            stars = 5
+        elif cat in ("券商研究","專業財經"):
+            stars = max(4, stars)
+
+        rel = int(r.get("_rel", 1))
+        rows.append({
+            "日期": r.get("日期",""),
+            "分類": cat,
+            "重要度": int(stars),
+            "情緒": _v157_sentiment(title),
+            "標題": title,
+            "來源": source or "Google News",
+            "連結": r.get("連結",""),
+            "相關度": "直接相關" if rel >= 3 else "延伸相關",
+            "_dt": r.get("_dt"),
+            "_rel": rel,
+        })
+
+    df = pd.DataFrame(rows)
+    return df.sort_values(["_rel","重要度","_dt"], ascending=[False,False,False]).head(50).reset_index(drop=True)
+
+def _v159_render(stock_id, stock_name):
+    news = _v159_prepare(stock_id, stock_name)
+    st.markdown(f"## 📰 {stock_id} {stock_name}｜近 15 日新聞情報")
+    st.caption("V15.9 多組關鍵字擴大搜尋｜六大分類固定顯示｜直接相關優先、延伸相關其次")
+
+    counts = {c: int((news["分類"] == c).sum()) if not news.empty else 0
+              for c in _V158_CATEGORIES}
+
+    row1 = st.columns(3)
+    for col, cat in zip(row1, _V158_CATEGORIES[:3]):
+        col.metric(cat, f"{counts[cat]} 則")
+    row2 = st.columns(3)
+    for col, cat in zip(row2, _V158_CATEGORIES[3:]):
+        col.metric(cat, f"{counts[cat]} 則")
+
+    if news.empty:
+        st.info("近 15 日目前未取得相關公開新聞。")
+        return
+
+    direct_n = int((news["相關度"] == "直接相關").sum())
+    st.caption(f"共整理 {len(news)} 則｜直接相關 {direct_n} 則｜其餘為搜尋延伸相關新聞。")
+
+    for cat in _V158_CATEGORIES:
+        part = news[news["分類"] == cat].copy()
+        with st.expander(f"{cat}｜{len(part)} 則",
+                         expanded=(cat == "官方重大訊息" and len(part) > 0)):
+            if part.empty:
+                st.caption("近 15 日目前未取得此分類新聞。")
+                continue
+            for _, r in part.iterrows():
+                stars = "★"*int(r["重要度"]) + "☆"*(5-int(r["重要度"]))
+                icon = {"偏多":"🟢","中性":"⚪","偏空":"🔴"}.get(r["情緒"],"⚪")
+                rel_icon = "🎯" if r["相關度"] == "直接相關" else "🔎"
+                st.markdown(
+                    f"""<div style="padding:10px 12px;margin:7px 0;
+                    border:1px solid rgba(212,175,55,.28);border-radius:12px;
+                    background:rgba(8,25,40,.72)">
+                    <div style="font-size:.76rem;opacity:.76">
+                    {r['日期']} ｜ {rel_icon} {r['相關度']} ｜ {icon} {r['情緒']} ｜ {r['來源']}
+                    </div>
+                    <div style="color:#e9c54d;font-size:.80rem;margin-top:3px">{stars}</div>
+                    <div style="font-weight:720;margin-top:4px;line-height:1.45">{r['標題']}</div>
+                    <div style="margin-top:5px"><a href="{r['連結']}" target="_blank"
+                    style="color:#e5bd42;text-decoration:none">查看原文 ↗</a></div>
+                    </div>""", unsafe_allow_html=True
+                )
+
+# 函式定義後執行
 try:
-    _v158_name = stock_name
+    _v159_name = stock_name
 except Exception:
     try:
-        _v158_name = name
+        _v159_name = name
     except Exception:
-        _v158_name = ""
-_v158_render(sid, _v158_name)
+        _v159_name = ""
+_v159_render(sid, _v159_name)
 
