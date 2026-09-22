@@ -660,7 +660,10 @@ def realtime_quote(sid):
 
 def v9_market_session():
     """Taiwan market session label. Weekend-aware; exchange holidays remain guarded by quote freshness."""
-    now=datetime.now(ZoneInfo("Asia/Taipei"))
+    try:
+        now=datetime.now(ZoneInfo("Asia/Taipei"))
+    except AttributeError:
+        now=datetime.datetime.now(ZoneInfo("Asia/Taipei"))
     if now.weekday()>=5:
         return "closed","休市"
     mins=now.hour*60+now.minute
