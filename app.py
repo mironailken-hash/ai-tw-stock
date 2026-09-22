@@ -533,6 +533,54 @@ def fm(dataset, sid, start, end, token=""):
         pass
     return pd.DataFrame()
 
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _v133_twse_month(sid, y, m):
+    """TWSE public monthly STOCK_DAY fallback for listed stocks."""
+    try:
+        date=f"{int(y):04d}{int(m):02d}01"
+        u="https://www.twse.com.tw/exchangeReport/STOCK_DAY"
+        r=requests.get(u,params={"response":"json","date":date,"stockNo":str(sid)},timeout=12)
+        j=r.json()
+        rows=j.get("data") or []
+        if not rows: return pd.DataFrame()
+        out=[]
+        for z in rows:
+            try:
+                roc=z[0].split("/")
+                gy=int(roc[0])+1911
+                d=f"{gy:04d}-{int(roc[1]):02d}-{int(roc[2]):02d}"
+                def n(v):
+                    return float(str(v).replace(",","").replace("--","nan"))
+                out.append({
+                    "date":d,
+                    "Trading_Volume":n(z[1]),
+                    "open":n(z[3]),"max":n(z[4]),"min":n(z[5]),"close":n(z[6])
+                })
+            except Exception:
+                continue
+        return pd.DataFrame(out)
+    except Exception:
+        return pd.DataFrame()
+
+@st.cache_data(ttl=1800, show_spinner=False)
+def _v133_twse_history(sid, months=48):
+    """Build multi-year listed-stock daily history from TWSE public monthly endpoint."""
+    import time as _time
+    now=_time.gmtime(_time.time()+8*3600)
+    y,m=now.tm_year,now.tm_mon
+    parts=[]
+    for k in range(int(months)):
+        mm=m-k
+        yy=y+(mm-1)//12
+        mm=(mm-1)%12+1
+        q=_v133_twse_month(sid,yy,mm)
+        if q is not None and len(q): parts.append(q)
+    if not parts: return pd.DataFrame()
+    x=pd.concat(parts,ignore_index=True)
+    x=x.drop_duplicates("date").sort_values("date").reset_index(drop=True)
+    return x
+
 @st.cache_data(ttl=86400)
 def stock_table():
     rows=[]
@@ -1309,8 +1357,14 @@ if not sid:
 
 today=date.today()
 price=fm("TaiwanStockPrice",sid,today-timedelta(days=330),today,token)
-if price.empty:
-    st.error("目前無法取得股價資料。請確認股票代號，或填入自己的 FinMind Token 後再試。")
+
+if price is None or price.empty:
+    _v133_fb=_v133_twse_history(sid,48)
+    if _v133_fb is not None and not _v133_fb.empty:
+        price=_v133_fb
+        st.caption("歷史資料來源：臺灣證券交易所公開盤後資料（備援）")
+if price is None or price.empty:
+    st.error("目前暫時無法取得足夠的歷史股價資料。系統已嘗試主要資料來源與備援來源，請稍後再試。")
     st.stop()
 
 d=add_indicators(price)
@@ -1583,7 +1637,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13 百億超級決策引擎
+    AI ACTION CENTER｜V13.3 百億超級決策引擎
     </div>
   <div class="decision-grid">
     <div>
