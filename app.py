@@ -1356,13 +1356,18 @@ if not sid:
     st.stop()
 
 today=date.today()
-price=fm("TaiwanStockPrice",sid,today-timedelta(days=330),today,token)
+price=fm("TaiwanStockPrice",sid,today-timedelta(days=1825),today,token)
 
-if price is None or price.empty:
-    _v133_fb=_v133_twse_history(sid,48)
+# V13.5: probability model requires multi-year history; short partial data is also backfilled.
+if price is None or price.empty or len(price) < 520:
+    _v133_fb=_v133_twse_history(sid,60)
     if _v133_fb is not None and not _v133_fb.empty:
-        price=_v133_fb
-        st.caption("歷史資料來源：臺灣證券交易所公開盤後資料（備援）")
+        if price is not None and not price.empty:
+            price=pd.concat([_v133_fb,price],ignore_index=True)
+            price=price.drop_duplicates("date",keep="last").sort_values("date").reset_index(drop=True)
+        else:
+            price=_v133_fb
+        st.caption(f"歷史資料：已啟用 TWSE 公開盤後備援，共 {len(price)} 個交易日")
 if price is None or price.empty:
     st.error("目前暫時無法取得足夠的歷史股價資料。系統已嘗試主要資料來源與備援來源，請稍後再試。")
     st.stop()
@@ -1637,7 +1642,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.4 百億超級決策引擎
+    AI ACTION CENTER｜V13.5 百億超級決策引擎
     </div>
   <div class="decision-grid">
     <div>
