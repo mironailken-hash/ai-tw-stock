@@ -1662,7 +1662,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V13.9 百億即時行情決策引擎
+    AI ACTION CENTER｜V13.10 百億即時行情決策引擎
     </div>
   <div class="decision-grid">
     <div>
@@ -1708,11 +1708,11 @@ try:
 except Exception:
     _v13_signal,_v13_invalid="觀望",np.nan
 
-st.markdown("## V13 決策摘要")
+st.markdown("## V13.10 決策摘要")
 _v13a,_v13b,_v13c=st.columns(3)
 _v13a.metric("市場狀態",_v13_regime)
 _v13b.metric("模型訊號",_v13_signal)
-_v13c.metric("模型失效參考", f"{_v13_invalid:.2f}" if pd.notna(_v13_invalid) else "資料不足")
+_v13c.metric("判斷失效價", f"{_v13_invalid:.2f}" if pd.notna(_v13_invalid) else "資料不足")
 st.caption("模型訊號是條件式決策輔助，不代表保證買賣結果；失效參考用於辨識原判斷何時不再成立。")
 _v13_accuracy_panel(sid)
 
