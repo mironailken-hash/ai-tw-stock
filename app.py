@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17.1")
+    st.markdown("## AI 條件機率｜V17.2")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.1 永久戰績校正版
+    AI ACTION CENTER｜V17.2 隱藏式 AI 自我驗證
     </div>
   <div class="decision-grid">
     <div>
@@ -3577,8 +3577,18 @@ def _v17_db_insert(row):
                 continue
             try:
                 ot=pd.Timestamp(old.get("signal_time"))
-                if abs((now-ot).total_seconds()) < 1800:
-                    return False,"30分鐘內已有相同訊號，已阻止重複紀錄"
+                # Automatic background mode: prevent repeated page refreshes from inflating samples.
+                # Same stock + same long/short/daytrade signal is stored at most once per Taiwan calendar day.
+                try:
+                    nt = now
+                    oo = ot
+                    if nt.tzinfo is None: nt = nt.tz_localize("UTC")
+                    if oo.tzinfo is None: oo = oo.tz_localize("UTC")
+                    same_tw_day = nt.tz_convert("Asia/Taipei").date() == oo.tz_convert("Asia/Taipei").date()
+                except Exception:
+                    same_tw_day = abs((now-ot).total_seconds()) < 86400
+                if same_tw_day:
+                    return False,"今日已有相同訊號，略過重複紀錄"
             except Exception:
                 pass
     except Exception:
@@ -3794,57 +3804,39 @@ def _v17_stats(rows):
             out[f"n_{label}"]=len(hits)
     return out
 
-def _v17_render():
-    st.markdown("## 🧾 V17.1｜永久戰績")
+def _v172_background_validation():
+    """
+    V17.2 hidden validation engine.
+    Runs when the Streamlit app itself executes:
+      1) settle eligible historical predictions
+      2) automatically save the current model snapshot
+      3) duplicate protection remains handled by _v17_db_insert()
+    No performance UI is rendered to the user.
+    """
     if not _v17_db_ready():
-        st.warning("永久資料庫尚未連線。為避免把暫存資料誤稱為永久戰績，本版不使用 /tmp 冒充永久保存。")
-        st.caption("完成 Supabase 資料表與 Streamlit Secrets 後，訊號才會跨重啟永久保留。")
         return
 
-    _v17_settle_open_predictions()
-    rows=_v17_db_read(500)
-    stats=_v17_stats(rows)
+    try:
+        _v17_settle_open_predictions()
+    except Exception:
+        pass
 
-    c1,c2,c3,c4=st.columns(4)
-    c1.metric("永久訊號",stats.get("total",0))
-    c2.metric("已結算",stats.get("settled",0))
-    c3.metric("1日方向命中率",f"{stats['hit_1d']*100:.1f}%" if "hit_1d" in stats else "—")
-    c4.metric("5日方向命中率",f"{stats['hit_5d']*100:.1f}%" if "hit_5d" in stats else "—")
+    try:
+        row = _v17_record_snapshot()
 
-    if st.button("記錄目前訊號到永久戰績",use_container_width=True):
-        row=_v17_record_snapshot()
-        ok,msg=_v17_db_insert(row)
-        if ok:
-            st.success(msg)
-            st.rerun()
-        else:
-            st.warning(msg)
+        # Do not create meaningless records when the main analysis is incomplete.
+        sid = str(row.get("stock_id") or "").strip()
+        signal = str(row.get("signal") or "").strip()
+        try:
+            price = float(row.get("entry_price"))
+        except Exception:
+            price = float("nan")
 
-    st.caption("方向命中率依訊號方向判定：偏多後上漲、偏空後下跌才算方向正確；觀望不納入方向命中率。第1／第5個交易日有資料後自動結算。")
+        if sid and signal and np.isfinite(price) and price > 0:
+            _v17_db_insert(row)
+    except Exception:
+        # Background validation must never break the main stock-analysis UI.
+        pass
 
-    if rows:
-        show=pd.DataFrame(rows)
-        if "signal_time" in show:
-            show["時間"]=show["signal_time"].map(_v171_tw_time)
-        if "p1" in show:
-            show["1日機率"]=pd.to_numeric(show["p1"],errors="coerce").map(lambda x:f"{x*100:.2f}%" if pd.notna(x) else "—")
-        if "p5" in show:
-            show["5日機率"]=pd.to_numeric(show["p5"],errors="coerce").map(lambda x:f"{x*100:.2f}%" if pd.notna(x) else "—")
-        if "return_1d" in show:
-            show["1日報酬"]=pd.to_numeric(show["return_1d"],errors="coerce").map(lambda x:f"{x*100:+.2f}%" if pd.notna(x) else "—")
-        if "return_5d" in show:
-            show["5日報酬"]=pd.to_numeric(show["return_5d"],errors="coerce").map(lambda x:f"{x*100:+.2f}%" if pd.notna(x) else "—")
-        rename={"stock_id":"代號","stock_name":"名稱","signal":"多單訊號","short_signal":"放空訊號",
-                "daytrade_signal":"當沖訊號","entry_price":"訊號價","status":"狀態"}
-        show=show.rename(columns=rename)
-        keep=[c for c in ["時間","代號","名稱","多單訊號","放空訊號","當沖訊號","訊號價",
-                          "1日機率","5日機率","1日報酬","5日報酬","狀態"] if c in show.columns]
-        st.dataframe(show[keep].head(50),use_container_width=True,hide_index=True)
-
-    if "hit_long" in stats or "hit_short" in stats:
-        a,b=st.columns(2)
-        a.metric("多方5日方向命中",f"{stats.get('hit_long',0)*100:.1f}%" if "hit_long" in stats else "—")
-        b.metric("空方5日方向命中",f"{stats.get('hit_short',0)*100:.1f}%" if "hit_short" in stats else "—")
-
-_v17_render()
+_v172_background_validation()
 
