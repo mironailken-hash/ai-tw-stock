@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V16.5")
+    st.markdown("## AI 條件機率｜V16.6")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V16.5 決策置頂版
+    AI ACTION CENTER｜V16.6 盤中即時決策版
     </div>
   <div class="decision-grid">
     <div>
@@ -3358,28 +3358,28 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
         if r5>0: bull+=1
         elif r5<0: bear+=1
 
-        if bull>=4 and pct<0.07:
+        if bull>=3 and bull>bear and pct<0.075:
             day_sig="偏多當沖"
-            day_reason=f"{bull}/4 盤中條件偏多"
+            day_reason=f"偏多 {bull}/4｜偏空 {bear}/4"
             cond=f"守住 {max(op,prev):.2f} 且維持今日區間上緣"
             invalid=f"跌破 {max(lo, min(op,prev)):.2f}"
-        elif bear>=4 and pct>-0.07:
+        elif bear>=3 and bear>bull and pct>-0.075:
             day_sig="偏空當沖"
-            day_reason=f"{bear}/4 盤中條件偏空"
+            day_reason=f"偏空 {bear}/4｜偏多 {bull}/4"
             cond=f"壓在 {min(op,prev):.2f} 下且維持今日區間下緣"
             invalid=f"站回 {min(hi, max(op,prev)):.2f}"
         else:
-            day_sig="等待"
+            day_sig="多空震盪"
             day_reason=f"偏多 {bull}/4｜偏空 {bear}/4"
             cond=f"突破 {hi:.2f} 看多確認；跌破 {lo:.2f} 看空確認"
-            invalid="未形成方向前不追價"
+            invalid="區間內不追價"
 
     return {"long":long_sig,"short":short_sig,"day":(day_sig,day_reason),
             "day_condition":cond,"day_invalid":invalid}
 
 def _v164_color(sig):
-    if sig in ("符合買進條件","偏多當沖"): return "#ff4d4f"   # 台股紅=多
-    if sig in ("符合放空條件","偏空當沖"): return "#21c77a" # 台股綠=空
+    if sig in ("符合買進條件","偏多當沖","偏多當沖・確認"): return "#ff4d4f"   # 台股紅=多
+    if sig in ("符合放空條件","偏空當沖","偏空當沖・確認"): return "#21c77a" # 台股綠=空
     if "等待" in sig: return "#f0ad4e"
     return "#aab4c0"
 
