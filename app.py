@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V16.6")
+    st.markdown("## AI 條件機率｜V16.7")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V16.6 盤中即時決策版
+    AI ACTION CENTER｜V16.7 單一決策源＋盤中共用版
     </div>
   <div class="decision-grid">
     <div>
@@ -3338,12 +3338,14 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
     prev=_v164_num(q.get("prev_close"))
     vol=_v164_num(q.get("volume"))
 
-    day_sig="等待"
-    day_reason="即時條件未形成"
-    cond="等待價格與量能確認"
+    required={"現價":lp,"開盤":op,"最高":hi,"最低":lo,"昨收":prev}
+    missing=[k for k,v in required.items() if v is None]
+    day_sig="資料不足" if missing else "等待"
+    day_reason=("缺少："+"、".join(missing)) if missing else "即時條件準備完成"
+    cond="等待即時行情欄位完整" if missing else "等待價格方向確認"
     invalid="—"
 
-    if all(v is not None for v in [lp,op,hi,lo,prev]) and hi>=lo:
+    if not missing and hi>=lo:
         rng=max(hi-lo,0.01)
         pos=(lp-lo)/rng
         pct=(lp/prev-1) if prev else 0
@@ -3383,10 +3385,24 @@ def _v164_color(sig):
     if "等待" in sig: return "#f0ad4e"
     return "#aab4c0"
 
-def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0):
+def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0, master_long_signal=None):
     r=_v164_long_short_daytrade(price_df,quote,p1,p5,inst_score)
+    # V16.7: 多單訊號與最上方 ACTION CENTER 共用同一個最終訊號。
+    if master_long_signal:
+        master_txt=str(master_long_signal).strip()
+        if "符合買進" in master_txt or master_txt in ("可買進","偏多確認"):
+            long_item=("符合買進條件","與 ACTION CENTER 同步")
+        elif "等待買進" in master_txt:
+            long_item=("等待買進","與 ACTION CENTER 同步")
+        elif "減碼" in master_txt or "賣出" in master_txt or "風險偏高" in master_txt:
+            long_item=("觀望","ACTION CENTER 顯示風險升高")
+        else:
+            long_item=("觀望","與 ACTION CENTER 同步")
+    else:
+        long_item=r["long"]
+
     items=[
-        ("多單訊號",r["long"][0],r["long"][1]),
+        ("多單訊號",long_item[0],long_item[1]),
         ("放空訊號",r["short"][0],r["short"][1]),
         ("當沖訊號",r["day"][0],r["day"][1]),
     ]
@@ -3404,6 +3420,14 @@ def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0):
     <b>當沖觸發：</b>{r['day_condition']}<br>
     <b>當沖失效：</b>{r['day_invalid']}
     </div>""",unsafe_allow_html=True)
+    q=quote if isinstance(quote,dict) else {}
+    _vals=[
+        ("現價",_v164_num(q.get("price"))),("開盤",_v164_num(q.get("open"))),
+        ("最高",_v164_num(q.get("high"))),("最低",_v164_num(q.get("low"))),
+        ("昨收",_v164_num(q.get("prev_close")))
+    ]
+    _txt="｜".join([f"{k} {v:.2f}" if v is not None else f"{k} 未取得" for k,v in _vals])
+    st.caption("盤中資料｜"+_txt)
     st.caption("以上為模型條件訊號；當沖與放空需另確認個股交易資格、借券/融券與即時流動性。")
 
 # Render V16.4 panel after all definitions, using existing app variables.
@@ -3412,10 +3436,21 @@ try:
 except Exception:
     try: _v164_df = df
     except Exception: _v164_df = None
-try:
-    _v164_q = realtime_quote(sid)
-except Exception:
-    _v164_q = {}
+# V16.7：優先共用頁面 LIVE PRICE 已取得的 quote，避免同頁兩套即時資料不同步。
+_v164_q = {}
+for _qname in ("live_quote", "_live_quote", "quote", "q", "_quote", "realtime_q"):
+    try:
+        _candidate = globals().get(_qname)
+        if isinstance(_candidate, dict) and _candidate:
+            _v164_q = _candidate
+            break
+    except Exception:
+        pass
+if not _v164_q:
+    try:
+        _v164_q = realtime_quote(sid)
+    except Exception:
+        _v164_q = {}
 try: _v164_p1 = _v10_p1
 except Exception: _v164_p1 = None
 try: _v164_p5 = _v10_p5
@@ -3423,6 +3458,17 @@ except Exception: _v164_p5 = None
 try: _v164_inst = inst_score
 except Exception: _v164_inst = 0
 
+# Find the same final signal used by ACTION CENTER.
+_v167_master_long = None
+for _sname in ("_v13_signal", "signal", "final_signal", "trade_signal", "model_signal", "_signal"):
+    try:
+        _sv = globals().get(_sname)
+        if isinstance(_sv, str) and _sv.strip():
+            _v167_master_long = _sv.strip()
+            break
+    except Exception:
+        pass
+
 with _v165_trade_decision_slot.container():
-    _v164_panel(_v164_df,_v164_q,_v164_p1,_v164_p5,_v164_inst)
+    _v164_panel(_v164_df,_v164_q,_v164_p1,_v164_p5,_v164_inst,_v167_master_long)
 
