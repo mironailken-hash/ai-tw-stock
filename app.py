@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17")
+    st.markdown("## AI 條件機率｜V17.1")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17 永久戰績系統
+    AI ACTION CENTER｜V17.1 永久戰績校正版
     </div>
   <div class="decision-grid">
     <div>
@@ -3562,6 +3562,27 @@ def _v17_db_ready():
 def _v17_db_insert(row):
     url,key=_v17_db_config()
     if not (url and key): return False,"永久資料庫未連線"
+    # V17.1 防重複：同股票、同方向訊號，30分鐘內不重複寫入。
+    try:
+        recent=_v17_db_read(100)
+        now=pd.Timestamp(row.get("signal_time"))
+        for old in recent:
+            if str(old.get("stock_id")) != str(row.get("stock_id")):
+                continue
+            if str(old.get("signal")) != str(row.get("signal")):
+                continue
+            if str(old.get("short_signal")) != str(row.get("short_signal")):
+                continue
+            if str(old.get("daytrade_signal")) != str(row.get("daytrade_signal")):
+                continue
+            try:
+                ot=pd.Timestamp(old.get("signal_time"))
+                if abs((now-ot).total_seconds()) < 1800:
+                    return False,"30分鐘內已有相同訊號，已阻止重複紀錄"
+            except Exception:
+                pass
+    except Exception:
+        pass
     try:
         r=requests.post(f"{url}/rest/v1/ken_ai_predictions",
                         headers=_v17_headers(key),json=row,timeout=12)
@@ -3719,23 +3740,62 @@ def _v17_settle_open_predictions():
             settled+=1
     return settled
 
+def _v171_direction(row):
+    """Return +1 long, -1 short, 0 neutral using recorded model direction."""
+    d=str(row.get("daytrade_signal") or "")
+    sh=str(row.get("short_signal") or "")
+    sig=str(row.get("signal") or "")
+    if any(x in d for x in ("偏空","尾盤偏空")) or "符合放空" in sh:
+        return -1
+    if any(x in d for x in ("偏多","尾盤偏多")) or any(x in sig for x in ("符合買進","可買進","偏多")):
+        return 1
+    return 0
+
+def _v171_hit(row, ret_col):
+    try:
+        r=float(row.get(ret_col))
+        if not np.isfinite(r): return None
+    except Exception:
+        return None
+    direction=_v171_direction(row)
+    if direction==0: return None
+    return bool(r*direction > 0)
+
+def _v171_tw_time(v):
+    try:
+        t=pd.Timestamp(v)
+        if t.tzinfo is None:
+            t=t.tz_localize("UTC")
+        return t.tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M")
+    except Exception:
+        return str(v or "")
+
 def _v17_stats(rows):
     if not rows: return {}
     df=pd.DataFrame(rows)
     if df.empty: return {}
-    settled=df[df.get("status","")=="SETTLED"].copy() if "status" in df else pd.DataFrame()
+    settled=df[df["status"].astype(str)=="SETTLED"].copy() if "status" in df else pd.DataFrame()
     out={"total":len(df),"settled":len(settled)}
     if settled.empty: return out
+    records=settled.to_dict("records")
     for col,label in (("return_1d","1d"),("return_5d","5d")):
-        if col in settled:
-            vals=pd.to_numeric(settled[col],errors="coerce").dropna()
-            if len(vals):
-                out[f"avg_{label}"]=float(vals.mean())
-                out[f"positive_{label}"]=float((vals>0).mean())
+        hits=[_v171_hit(r,col) for r in records]
+        hits=[x for x in hits if x is not None]
+        if hits:
+            out[f"hit_{label}"]=sum(hits)/len(hits)
+            out[f"hit_n_{label}"]=len(hits)
+    # Separate long/short directional hit rates on 5D settled outcome.
+    for direction,label in ((1,"long"),(-1,"short")):
+        sub=[r for r in records if _v171_direction(r)==direction]
+        hits=[_v171_hit(r,"return_5d") for r in sub]
+        hits=[x for x in hits if x is not None]
+        if hits:
+            out[f"hit_{label}"]=sum(hits)/len(hits)
+            out[f"n_{label}"]=len(hits)
     return out
 
 def _v17_render():
-    st.markdown("## 🧾 V17｜永久戰績")
+    st.markdown("## 🧾 V17.1｜永久戰績")
     if not _v17_db_ready():
         st.warning("永久資料庫尚未連線。為避免把暫存資料誤稱為永久戰績，本版不使用 /tmp 冒充永久保存。")
         st.caption("完成 Supabase 資料表與 Streamlit Secrets 後，訊號才會跨重啟永久保留。")
@@ -3748,22 +3808,43 @@ def _v17_render():
     c1,c2,c3,c4=st.columns(4)
     c1.metric("永久訊號",stats.get("total",0))
     c2.metric("已結算",stats.get("settled",0))
-    c3.metric("1日正報酬率",f"{stats.get('positive_1d',0)*100:.1f}%" if stats.get("settled",0) else "—")
-    c4.metric("5日正報酬率",f"{stats.get('positive_5d',0)*100:.1f}%" if stats.get("settled",0) else "—")
+    c3.metric("1日方向命中率",f"{stats['hit_1d']*100:.1f}%" if "hit_1d" in stats else "—")
+    c4.metric("5日方向命中率",f"{stats['hit_5d']*100:.1f}%" if "hit_5d" in stats else "—")
 
     if st.button("記錄目前訊號到永久戰績",use_container_width=True):
         row=_v17_record_snapshot()
         ok,msg=_v17_db_insert(row)
-        (st.success if ok else st.error)(msg)
+        if ok:
+            st.success(msg)
+            st.rerun()
+        else:
+            st.warning(msg)
 
-    st.caption("戰績以訊號當時價格對後續第1／第5個交易日收盤計算；正報酬率只是歷史結果，不代表未來績效。")
+    st.caption("方向命中率依訊號方向判定：偏多後上漲、偏空後下跌才算方向正確；觀望不納入方向命中率。第1／第5個交易日有資料後自動結算。")
 
     if rows:
         show=pd.DataFrame(rows)
-        keep=[c for c in ["signal_time","stock_id","stock_name","signal","short_signal",
-                          "daytrade_signal","entry_price","p1","p5","return_1d","return_5d","status"]
-              if c in show.columns]
+        if "signal_time" in show:
+            show["時間"]=show["signal_time"].map(_v171_tw_time)
+        if "p1" in show:
+            show["1日機率"]=pd.to_numeric(show["p1"],errors="coerce").map(lambda x:f"{x*100:.2f}%" if pd.notna(x) else "—")
+        if "p5" in show:
+            show["5日機率"]=pd.to_numeric(show["p5"],errors="coerce").map(lambda x:f"{x*100:.2f}%" if pd.notna(x) else "—")
+        if "return_1d" in show:
+            show["1日報酬"]=pd.to_numeric(show["return_1d"],errors="coerce").map(lambda x:f"{x*100:+.2f}%" if pd.notna(x) else "—")
+        if "return_5d" in show:
+            show["5日報酬"]=pd.to_numeric(show["return_5d"],errors="coerce").map(lambda x:f"{x*100:+.2f}%" if pd.notna(x) else "—")
+        rename={"stock_id":"代號","stock_name":"名稱","signal":"多單訊號","short_signal":"放空訊號",
+                "daytrade_signal":"當沖訊號","entry_price":"訊號價","status":"狀態"}
+        show=show.rename(columns=rename)
+        keep=[c for c in ["時間","代號","名稱","多單訊號","放空訊號","當沖訊號","訊號價",
+                          "1日機率","5日機率","1日報酬","5日報酬","狀態"] if c in show.columns]
         st.dataframe(show[keep].head(50),use_container_width=True,hide_index=True)
+
+    if "hit_long" in stats or "hit_short" in stats:
+        a,b=st.columns(2)
+        a.metric("多方5日方向命中",f"{stats.get('hit_long',0)*100:.1f}%" if "hit_long" in stats else "—")
+        b.metric("空方5日方向命中",f"{stats.get('hit_short',0)*100:.1f}%" if "hit_short" in stats else "—")
 
 _v17_render()
 
