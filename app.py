@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V16.7")
+    st.markdown("## AI 條件機率｜V16.8")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V16.7 單一決策源＋盤中共用版
+    AI ACTION CENTER｜V16.8 最終決策同步版
     </div>
   <div class="decision-grid">
     <div>
@@ -3336,6 +3336,20 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
     hi=_v164_num(q.get("high"))
     lo=_v164_num(q.get("low"))
     prev=_v164_num(q.get("prev_close"))
+    # V16.8: TWSE MIS may expose previous close as y instead of prev_close.
+    if prev is None:
+        prev=_v164_num(q.get("y"))
+    # Final fallback: use the latest valid historical close before today's live session.
+    if prev is None:
+        try:
+            _hist_close=pd.to_numeric(price_df["close"],errors="coerce").dropna()
+            if len(_hist_close):
+                prev=float(_hist_close.iloc[-1])
+                # If latest history appears to be today's live/analysis close, prefer prior bar.
+                if lp is not None and abs(prev-lp)<1e-9 and len(_hist_close)>=2:
+                    prev=float(_hist_close.iloc[-2])
+        except Exception:
+            prev=None
     vol=_v164_num(q.get("volume"))
 
     required={"現價":lp,"開盤":op,"最高":hi,"最低":lo,"昨收":prev}
@@ -3421,10 +3435,23 @@ def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0, master_long_sig
     <b>當沖失效：</b>{r['day_invalid']}
     </div>""",unsafe_allow_html=True)
     q=quote if isinstance(quote,dict) else {}
+    _diag_prev=_v164_num(q.get("prev_close"))
+    if _diag_prev is None:
+        _diag_prev=_v164_num(q.get("y"))
+    if _diag_prev is None:
+        try:
+            _hc=pd.to_numeric(price_df["close"],errors="coerce").dropna()
+            if len(_hc):
+                _diag_prev=float(_hc.iloc[-1])
+                _lp=_v164_num(q.get("price"))
+                if _lp is not None and abs(_diag_prev-_lp)<1e-9 and len(_hc)>=2:
+                    _diag_prev=float(_hc.iloc[-2])
+        except Exception:
+            pass
     _vals=[
         ("現價",_v164_num(q.get("price"))),("開盤",_v164_num(q.get("open"))),
         ("最高",_v164_num(q.get("high"))),("最低",_v164_num(q.get("low"))),
-        ("昨收",_v164_num(q.get("prev_close")))
+        ("昨收",_diag_prev)
     ]
     _txt="｜".join([f"{k} {v:.2f}" if v is not None else f"{k} 未取得" for k,v in _vals])
     st.caption("盤中資料｜"+_txt)
@@ -3458,14 +3485,44 @@ except Exception: _v164_p5 = None
 try: _v164_inst = inst_score
 except Exception: _v164_inst = 0
 
-# Find the same final signal used by ACTION CENTER.
+# V16.8: one explicit final-decision source for the lower multi/short/daytrade panel.
+# The ACTION CENTER visible rule reports confirmation count; use that same confirmation result.
 _v167_master_long = None
-for _sname in ("_v13_signal", "signal", "final_signal", "trade_signal", "model_signal", "_signal"):
+try:
+    # Common confirmation-count variables used by the existing ACTION CENTER.
+    _confirm=None
+    for _n in ("confirm_count","confirmation_count","conditions_met","_confirm_count","_conditions_met"):
+        _vv=globals().get(_n)
+        if isinstance(_vv,(int,float,np.integer,np.floating)):
+            _confirm=int(_vv); break
+    if _confirm is not None:
+        if _confirm>=3:
+            _v167_master_long="符合買進條件"
+        elif _confirm==2:
+            _v167_master_long="等待買進"
+        else:
+            _v167_master_long="觀望"
+except Exception:
+    _v167_master_long=None
+
+# If the app exposes a final textual decision, only accept known decision labels.
+if _v167_master_long is None:
+    _known=("符合買進條件","等待買進","可買進","偏多確認","觀望","減碼警戒","賣出","風險偏高")
+    for _sname in ("final_decision","action_signal","action_center_signal","trade_signal","model_signal"):
+        try:
+            _sv=globals().get(_sname)
+            if isinstance(_sv,str) and any(k in _sv for k in _known):
+                _v167_master_long=_sv.strip()
+                break
+        except Exception:
+            pass
+
+# Last fallback uses the same 3-of-4 confirmation shown by the current ACTION CENTER screenshot.
+if _v167_master_long is None:
     try:
-        _sv = globals().get(_sname)
-        if isinstance(_sv, str) and _sv.strip():
-            _v167_master_long = _sv.strip()
-            break
+        _visible_confirm=3 if "符合買進條件" in str(globals().get("_v13_signal","")) else None
+        if _visible_confirm==3:
+            _v167_master_long="符合買進條件"
     except Exception:
         pass
 
