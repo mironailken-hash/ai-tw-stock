@@ -898,7 +898,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V16.9")
+    st.markdown("## AI 條件機率｜V17")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1777,7 +1777,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V16.9 量能VWAP尾盤決策版
+    AI ACTION CENTER｜V17 永久戰績系統
     </div>
   <div class="decision-grid">
     <div>
@@ -3528,4 +3528,242 @@ if _v167_master_long is None:
 
 with _v165_trade_decision_slot.container():
     _v164_panel(_v164_df,_v164_q,_v164_p1,_v164_p5,_v164_inst,_v167_master_long)
+
+
+# ===== V17：永久戰績系統（GitHub/Streamlit Cloud 可搭配 Supabase REST 永久保存） =====
+# Secrets（選配）：
+# SUPABASE_URL = "https://xxxx.supabase.co"
+# SUPABASE_KEY = "..."
+# 若未設定，系統不會偽稱永久保存，會明確顯示「永久資料庫未連線」。
+
+def _v17_secret(name, default=""):
+    try:
+        return str(st.secrets.get(name, default) or "").strip()
+    except Exception:
+        return default
+
+def _v17_db_config():
+    url=_v17_secret("SUPABASE_URL").rstrip("/")
+    key=_v17_secret("SUPABASE_KEY")
+    return url,key
+
+def _v17_headers(key):
+    return {
+        "apikey":key,
+        "Authorization":f"Bearer {key}",
+        "Content-Type":"application/json",
+        "Prefer":"return=representation",
+    }
+
+def _v17_db_ready():
+    url,key=_v17_db_config()
+    return bool(url and key)
+
+def _v17_db_insert(row):
+    url,key=_v17_db_config()
+    if not (url and key): return False,"永久資料庫未連線"
+    try:
+        r=requests.post(f"{url}/rest/v1/ken_ai_predictions",
+                        headers=_v17_headers(key),json=row,timeout=12)
+        if r.status_code in (200,201):
+            return True,"已永久記錄"
+        return False,f"資料庫寫入失敗 HTTP {r.status_code}"
+    except Exception as e:
+        return False,f"資料庫連線失敗：{type(e).__name__}"
+
+def _v17_db_read(limit=500):
+    url,key=_v17_db_config()
+    if not (url and key): return []
+    try:
+        h=_v17_headers(key)
+        h["Prefer"]="count=exact"
+        r=requests.get(
+            f"{url}/rest/v1/ken_ai_predictions"
+            f"?select=*&order=created_at.desc&limit={int(limit)}",
+            headers=h,timeout=12
+        )
+        return r.json() if r.status_code==200 and isinstance(r.json(),list) else []
+    except Exception:
+        return []
+
+def _v17_db_patch(row_id, patch):
+    url,key=_v17_db_config()
+    if not (url and key): return False
+    try:
+        r=requests.patch(
+            f"{url}/rest/v1/ken_ai_predictions?id=eq.{row_id}",
+            headers=_v17_headers(key),json=patch,timeout=12
+        )
+        return r.status_code in (200,204)
+    except Exception:
+        return False
+
+def _v17_scalar(v):
+    try:
+        if isinstance(v,dict):
+            for k in ("probability","prob","p","value"):
+                if k in v: v=v[k]; break
+        if isinstance(v,(tuple,list)):
+            vals=[x for x in v if isinstance(x,(int,float,np.integer,np.floating))]
+            v=vals[0] if vals else None
+        if isinstance(v,pd.Series):
+            v=v.dropna().iloc[-1] if len(v.dropna()) else None
+        if isinstance(v,np.ndarray):
+            v=v.reshape(-1)[-1] if v.size else None
+        if v is None: return None
+        v=float(v)
+        return v if np.isfinite(v) else None
+    except Exception:
+        return None
+
+def _v17_current_signal():
+    # Prefer the V16.8/16.9 unified decision already computed for the top panel.
+    try:
+        v=globals().get("_v167_master_long")
+        if isinstance(v,str) and v.strip(): return v.strip()
+    except Exception: pass
+    for n in ("final_decision","action_signal","action_center_signal","trade_signal","model_signal"):
+        try:
+            v=globals().get(n)
+            if isinstance(v,str) and v.strip(): return v.strip()
+        except Exception: pass
+    return "觀望"
+
+def _v17_current_quote():
+    for n in ("_v164_q","live_quote","_live_quote","quote","q"):
+        try:
+            v=globals().get(n)
+            if isinstance(v,dict) and v: return v
+        except Exception: pass
+    try: return realtime_quote(sid)
+    except Exception: return {}
+
+def _v17_price(q):
+    for k in ("price","z","close"):
+        v=_v17_scalar(q.get(k)) if isinstance(q,dict) else None
+        if v is not None: return v
+    try:
+        cc=pd.to_numeric(price["close"],errors="coerce").dropna()
+        return float(cc.iloc[-1]) if len(cc) else None
+    except Exception: return None
+
+def _v17_record_snapshot():
+    q=_v17_current_quote()
+    px=_v17_price(q)
+    sig=_v17_current_signal()
+    try: p1=_v17_scalar(_v10_p1)
+    except Exception: p1=None
+    try: p5=_v17_scalar(_v10_p5)
+    except Exception: p5=None
+
+    # Also preserve current short/daytrade states if the engine exists.
+    short_sig=day_sig=""
+    try:
+        rr=_v164_long_short_daytrade(_v164_df,q,p1,p5,_v164_inst)
+        short_sig=rr["short"][0]
+        day_sig=rr["day"][0]
+    except Exception:
+        pass
+
+    now=pd.Timestamp.now(tz="Asia/Taipei")
+    return {
+        "stock_id":str(sid),
+        "stock_name":str(globals().get("stock_name",globals().get("name","")) or ""),
+        "signal":sig,
+        "short_signal":short_sig,
+        "daytrade_signal":day_sig,
+        "entry_price":px,
+        "p1":p1,
+        "p5":p5,
+        "signal_time":now.isoformat(),
+        "status":"OPEN",
+    }
+
+def _v17_settle_open_predictions():
+    """Settle records when enough calendar/trading history is available.
+    1D/5D are evaluated against historical closes; no fabricated outcome."""
+    rows=_v17_db_read(500)
+    if not rows: return 0
+    try:
+        hist=price.copy()
+        if "date" in hist.columns:
+            hist["_d"]=pd.to_datetime(hist["date"],errors="coerce").dt.date
+        else:
+            hist["_d"]=pd.to_datetime(hist.index,errors="coerce").date
+        hist["_c"]=pd.to_numeric(hist["close"],errors="coerce")
+        hist=hist.dropna(subset=["_c"])
+    except Exception:
+        return 0
+
+    settled=0
+    for r in rows:
+        if r.get("status")!="OPEN" or str(r.get("stock_id"))!=str(sid): continue
+        try:
+            d=pd.Timestamp(r.get("signal_time")).tz_convert("Asia/Taipei").date()
+        except Exception:
+            try: d=pd.Timestamp(r.get("signal_time")).date()
+            except Exception: continue
+        future=hist[hist["_d"]>d].sort_values("_d")
+        entry=_v17_scalar(r.get("entry_price"))
+        if entry is None: continue
+        patch={}
+        if len(future)>=1 and r.get("return_1d") is None:
+            c1=float(future.iloc[0]["_c"])
+            patch["return_1d"]=(c1/entry-1.0)
+        if len(future)>=5:
+            c5=float(future.iloc[4]["_c"])
+            patch["return_5d"]=(c5/entry-1.0)
+            patch["status"]="SETTLED"
+            patch["settled_at"]=pd.Timestamp.now(tz="Asia/Taipei").isoformat()
+        if patch and _v17_db_patch(r.get("id"),patch):
+            settled+=1
+    return settled
+
+def _v17_stats(rows):
+    if not rows: return {}
+    df=pd.DataFrame(rows)
+    if df.empty: return {}
+    settled=df[df.get("status","")=="SETTLED"].copy() if "status" in df else pd.DataFrame()
+    out={"total":len(df),"settled":len(settled)}
+    if settled.empty: return out
+    for col,label in (("return_1d","1d"),("return_5d","5d")):
+        if col in settled:
+            vals=pd.to_numeric(settled[col],errors="coerce").dropna()
+            if len(vals):
+                out[f"avg_{label}"]=float(vals.mean())
+                out[f"positive_{label}"]=float((vals>0).mean())
+    return out
+
+def _v17_render():
+    st.markdown("## 🧾 V17｜永久戰績")
+    if not _v17_db_ready():
+        st.warning("永久資料庫尚未連線。為避免把暫存資料誤稱為永久戰績，本版不使用 /tmp 冒充永久保存。")
+        st.caption("完成 Supabase 資料表與 Streamlit Secrets 後，訊號才會跨重啟永久保留。")
+        return
+
+    _v17_settle_open_predictions()
+    rows=_v17_db_read(500)
+    stats=_v17_stats(rows)
+
+    c1,c2,c3,c4=st.columns(4)
+    c1.metric("永久訊號",stats.get("total",0))
+    c2.metric("已結算",stats.get("settled",0))
+    c3.metric("1日正報酬率",f"{stats.get('positive_1d',0)*100:.1f}%" if stats.get("settled",0) else "—")
+    c4.metric("5日正報酬率",f"{stats.get('positive_5d',0)*100:.1f}%" if stats.get("settled",0) else "—")
+
+    if st.button("記錄目前訊號到永久戰績",use_container_width=True):
+        row=_v17_record_snapshot()
+        ok,msg=_v17_db_insert(row)
+        (st.success if ok else st.error)(msg)
+
+    st.caption("戰績以訊號當時價格對後續第1／第5個交易日收盤計算；正報酬率只是歷史結果，不代表未來績效。")
+
+    if rows:
+        show=pd.DataFrame(rows)
+        keep=[c for c in ["signal_time","stock_id","stock_name","signal","short_signal",
+                          "daytrade_signal","entry_price","p1","p5","return_1d","return_5d","status"]
+              if c in show.columns]
+        st.dataframe(show[keep].head(50),use_container_width=True,hide_index=True)
+
+_v17_render()
 
