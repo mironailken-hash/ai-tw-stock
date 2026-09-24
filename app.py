@@ -928,7 +928,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17.3")
+    st.markdown("## AI 條件機率｜V17.4")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1857,7 +1857,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.3 盤中動能強化版
+    AI ACTION CENTER｜V17.4 方向／進場分離版
     </div>
   <div class="decision-grid">
     <div>
@@ -3449,14 +3449,18 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
             cond="漲停鎖定屬極強動能；若開板，觀察承接與量價是否維持"
             invalid=f"開板後跌離 {_lu:.2f} 且無法快速收復，重新評估"
             return {"long":long_sig,"short":short_sig,"day":(day_sig,day_reason),
-                    "day_condition":cond,"day_invalid":invalid}
+                    "day_condition":cond,"day_invalid":invalid,
+                    "market_direction":"極強偏多",
+                    "entry_state":"漲停鎖定・不追價"}
         if np.isfinite(_ld) and lp<=_ld+_tick*0.25 and _pct_live<=-0.09:
             day_sig="極弱偏空・跌停"
             day_reason=f"現價 {lp:.2f}｜今日跌停 {_ld:.2f}｜盤中弱勢確認"
             cond="跌停屬極弱動能；若打開跌停，觀察是否出現有效承接"
             invalid=f"脫離 {_ld:.2f} 並持續站回，重新評估"
             return {"long":long_sig,"short":short_sig,"day":(day_sig,day_reason),
-                    "day_condition":cond,"day_invalid":invalid}
+                    "day_condition":cond,"day_invalid":invalid,
+                    "market_direction":"極弱偏空",
+                    "entry_state":"跌停鎖定・不追空"}
 
         rng=max(hi-lo,0.01)
         pos=(lp-lo)/rng
@@ -3488,8 +3492,32 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
             cond=f"突破 {hi:.2f} 看多確認；跌破 {lo:.2f} 看空確認"
             invalid="區間內不追價"
 
+    # V17.4：方向與進場分離。方向描述市場強弱；進場狀態描述此刻是否適合執行。
+    if bull >= 4 and bear <= 2:
+        market_direction="強勢偏多"
+    elif bear >= 4 and bull <= 2:
+        market_direction="強勢偏空"
+    elif bull > bear:
+        market_direction="偏多"
+    elif bear > bull:
+        market_direction="偏空"
+    else:
+        market_direction="中性震盪"
+
+    if long_sig == "符合買進條件":
+        entry_state="多方條件成立"
+    elif short_sig == "符合放空條件":
+        entry_state="空方條件成立"
+    elif "偏多" in day_sig:
+        entry_state="等待拉回／確認承接"
+    elif "偏空" in day_sig:
+        entry_state="等待反彈／確認轉弱"
+    else:
+        entry_state="等待更明確進場條件"
+
     return {"long":long_sig,"short":short_sig,"day":(day_sig,day_reason),
-            "day_condition":cond,"day_invalid":invalid}
+            "day_condition":cond,"day_invalid":invalid,
+            "market_direction":market_direction,"entry_state":entry_state}
 
 def _v164_color(sig):
     if sig in ("符合買進條件","偏多當沖","偏多當沖・確認","極強偏多・漲停"): return "#ff4d4f"   # 台股紅=多
@@ -3498,6 +3526,8 @@ def _v164_color(sig):
     return "#aab4c0"
 
 def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0, master_long_signal=None):
+    market_direction = d.get("market_direction", "—")
+    entry_state = d.get("entry_state", d.get("long", "等待"))
     r=_v164_long_short_daytrade(price_df,quote,p1,p5,inst_score)
     # V16.7: 多單訊號與最上方 ACTION CENTER 共用同一個最終訊號。
     if master_long_signal:
@@ -3633,7 +3663,6 @@ with _v165_trade_decision_slot.container():
 # SUPABASE_URL = "https://xxxx.supabase.co"
 # SUPABASE_KEY = "..."
 # 若未設定，系統不會偽稱永久保存，會明確顯示「永久資料庫未連線」。
-
 def _v17_secret(name, default=""):
     try:
         return str(st.secrets.get(name, default) or "").strip()
