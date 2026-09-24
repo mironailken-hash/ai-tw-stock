@@ -928,7 +928,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17.6.2")
+    st.markdown("## AI 條件機率｜V17.6.3")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1857,7 +1857,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.6.2 多週期安全修正版
+    AI ACTION CENTER｜V17.6.3 多週期獨立修正版
     </div>
   <div class="decision-grid">
     <div>
@@ -2058,8 +2058,38 @@ def _v176_horizon_signals(price_df, quote, p1=None, p5=None, inst_score=0):
     r20=last/float(c.iloc[-21])-1 if len(c)>=21 else 0
     r60=last/float(c.iloc[-61])-1 if len(c)>=61 else 0
 
-    pp1=_prob_scalar(p1)
-    pp5=_prob_scalar(p5)
+    # V17.6.3：本模組自帶機率轉換，不依賴後方才宣告的 _prob_scalar。
+    def _v176_prob(v):
+        if v is None:
+            return None
+        # common containers returned by earlier model functions
+        if isinstance(v, dict):
+            for k in ("prob","probability","p","value","up_prob","p1","p5"):
+                if k in v:
+                    return _v176_prob(v[k])
+            return None
+        if isinstance(v, (list, tuple, np.ndarray, pd.Series)):
+            if len(v) == 0:
+                return None
+            # Prefer the last numeric item because model outputs often store prob last.
+            for item in list(v)[::-1]:
+                z=_v176_prob(item)
+                if z is not None:
+                    return z
+            return None
+        try:
+            z=float(v)
+            if not np.isfinite(z):
+                return None
+            # Accept either 0~1 or 0~100 representations.
+            if 1 < z <= 100:
+                z=z/100.0
+            return z if 0 <= z <= 1 else None
+        except Exception:
+            return None
+
+    pp1=_v176_prob(p1)
+    pp5=_v176_prob(p5)
 
     q=quote if isinstance(quote,dict) else {}
     live=_v176_num(q.get("price"))
