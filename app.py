@@ -771,7 +771,7 @@ def institutional_score(inst):
 
 
 def realtime_quote(sid):
-    """TWSE MIS 公開盤中行情。上市先查 tse，再查 otc；失敗則回傳空資料。"""
+    """TWSE MIS 公開盤中行情；V17.3 修正漲停/無最新成交時 z=0 或 '-' 的情況。"""
     headers={"User-Agent":"Mozilla/5.0","Referer":"https://mis.twse.com.tw/"}
     for market in ["tse","otc"]:
         try:
@@ -779,38 +779,68 @@ def realtime_quote(sid):
             params={"ex_ch":f"{market}_{sid}.tw","json":"1","delay":"0"}
             j=requests.get(url,params=params,headers=headers,timeout=8).json()
             msg=j.get("msgArray",[])
-            if msg:
-                x=msg[0]
-                def num(v):
-                    try:
-                        # MIS sometimes returns '-' or comma separated strings
-                        return float(str(v).replace(",","")) if str(v) not in ["","-","--"] else np.nan
-                    except Exception:
-                        return np.nan
-                z=num(x.get("z"))
-                y=num(x.get("y"))
-                o=num(x.get("o"))
-                h=num(x.get("h"))
-                l=num(x.get("l"))
-                v=num(x.get("v"))
-                t=x.get("t","")
-                d=x.get("d","")
-                name=x.get("n","")
-                if pd.isna(z):
-                    # If no last trade, use best bid/ask midpoint when available
-                    bids=str(x.get("b","")).split("_")
-                    asks=str(x.get("a","")).split("_")
-                    bid=num(bids[0]) if bids else np.nan
-                    ask=num(asks[0]) if asks else np.nan
-                    if pd.notna(bid) and pd.notna(ask): z=(bid+ask)/2
-                    elif pd.notna(bid): z=bid
-                    elif pd.notna(ask): z=ask
-                return {"price":z,"prev":y,"open":o,"high":h,"low":l,"volume":v,
-                        "time":f"{d} {t}".strip(),"market":market,"name":name}
+            if not msg:
+                continue
+            x=msg[0]
+
+            def num(v):
+                try:
+                    vv=str(v).replace(",","").strip()
+                    if vv in ("","-","--","None","null"): return np.nan
+                    z=float(vv)
+                    return z if np.isfinite(z) else np.nan
+                except Exception:
+                    return np.nan
+
+            def first_book(v):
+                arr=str(v or "").split("_")
+                for item in arr:
+                    z=num(item)
+                    if pd.notna(z) and z>0:
+                        return z
+                return np.nan
+
+            z=num(x.get("z"))
+            y=num(x.get("y"))
+            o=num(x.get("o"))
+            h=num(x.get("h"))
+            l=num(x.get("l"))
+            v=num(x.get("v"))
+            bid=first_book(x.get("b"))
+            ask=first_book(x.get("a"))
+
+            # MIS 在漲停鎖單、瞬間無最新成交等情況，z 可能為 0 / -。
+            # 依序採用可交易價資訊；最後才用今日高/開盤，避免 LIVE PRICE 顯示 0。
+            if pd.isna(z) or z<=0:
+                if pd.notna(bid) and bid>0 and pd.notna(ask) and ask>0:
+                    z=(bid+ask)/2
+                elif pd.notna(bid) and bid>0:
+                    z=bid
+                elif pd.notna(ask) and ask>0:
+                    z=ask
+                elif pd.notna(h) and h>0:
+                    z=h
+                elif pd.notna(o) and o>0:
+                    z=o
+
+            return {
+                "price":z,
+                "prev":y,
+                "prev_close":y,   # 統一欄位，供 LIVE PRICE / 當沖共用
+                "y":y,
+                "open":o,
+                "high":h,
+                "low":l,
+                "volume":v,
+                "bid":bid,
+                "ask":ask,
+                "time":f"{x.get('d','')} {x.get('t','')}".strip(),
+                "market":market,
+                "name":x.get("n","")
+            }
         except Exception:
             pass
     return {}
-
 
 
 
@@ -898,7 +928,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17.2")
+    st.markdown("## AI 條件機率｜V17.3")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1383,6 +1413,34 @@ def rss(q,n=5):
         return [{"title":x.findtext("title",""),"link":x.findtext("link","")} for x in root.findall(".//item")[:n]]
     except Exception:return []
 
+def _tw_tick(px):
+    """台股一般股票價格跳動單位。"""
+    try:
+        p=float(px)
+    except Exception:
+        return 0.01
+    if p < 10: return 0.01
+    if p < 50: return 0.05
+    if p < 100: return 0.1
+    if p < 500: return 0.5
+    if p < 1000: return 1.0
+    return 5.0
+
+def _tw_price_to_tick(px):
+    tick=_tw_tick(px)
+    return round(float(px)/tick)*tick
+
+def _tw_limit_prices(prev_close):
+    """一般股票 ±10% 漲跌停的實用估算，對齊台股跳動單位。"""
+    try:
+        p=float(prev_close)
+        if not np.isfinite(p) or p<=0: return (np.nan,np.nan)
+        up=_tw_price_to_tick(p*1.10)
+        dn=_tw_price_to_tick(p*0.90)
+        return up,dn
+    except Exception:
+        return (np.nan,np.nan)
+
 def attack_status(short, close, support, resistance, vol_ratio, inst_score=50):
     """V5 五級市場訊號：清楚，但以條件式模型訊號呈現。"""
     breakout=max(resistance, close*1.01)
@@ -1592,6 +1650,28 @@ status,status_reason,breakout,pull_lo,pull_hi,weak,confirmations=attack_status(
     short,close,support,resistance,vol_ratio,inst_score
 )
 
+# V17.3：盤中動能優先層。歷史模型仍保留，但盤中已發生的極端行情不可被昨日門檻蓋掉。
+_v173_limit_up,_v173_limit_down=_tw_limit_prices(prev)
+_v173_pct=(close/prev-1)*100 if prev and np.isfinite(prev) else 0.0
+_v173_tick=_tw_tick(close)
+_v173_at_limit_up=(np.isfinite(_v173_limit_up) and close >= _v173_limit_up-_v173_tick*0.25 and _v173_pct>=9.0)
+_v173_at_limit_down=(np.isfinite(_v173_limit_down) and close <= _v173_limit_down+_v173_tick*0.25 and _v173_pct<=-9.0)
+_v173_gap=((day_open/prev-1)*100) if 'day_open' in globals() and prev else ((rt.get("open",np.nan)/prev-1)*100 if rt and pd.notna(rt.get("open",np.nan)) and prev else 0.0)
+
+if _v173_at_limit_up:
+    status="🔴 盤中訊號：極強偏多・漲停確認"
+    status_reason=f"現價已達今日漲停附近（{_v173_limit_up:.2f}）；盤中動能已確認，不再要求突破今日不可能成交的歷史門檻。"
+    breakout=float(_v173_limit_up)
+    confirmations=max(confirmations,4)
+elif _v173_at_limit_down:
+    status="🟢 盤中訊號：極弱偏空・跌停確認"
+    status_reason=f"現價已達今日跌停附近（{_v173_limit_down:.2f}）；盤中風險優先於歷史多方條件。"
+    breakout=float(_v173_limit_down)
+    confirmations=0
+elif rt and _v173_pct>=5.0 and pd.notna(rt.get("high",np.nan)) and close>=float(rt.get("high"))-_v173_tick:
+    status="🔴 盤中訊號：強勢偏多"
+    status_reason=f"盤中漲幅 {_v173_pct:+.2f}% 且位於今日高檔，盤中動能優先提高訊號敏感度。"
+
 # V6 即時價格與 AI 當沖雷達
 _market_open, _tw_now = market_is_open_tw()
 rt_open = rt.get("open", np.nan) if rt else np.nan
@@ -1777,7 +1857,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.2 隱藏式 AI 自我驗證
+    AI ACTION CENTER｜V17.3 盤中動能強化版
     </div>
   <div class="decision-grid">
     <div>
@@ -1788,7 +1868,7 @@ st.markdown(f"""
     <div class="decision-score"><span style="font-size:22px">趨勢強度：</span>{short_label}</div>
   </div>
   <div class="level-grid">
-    <div class="levelbox"><div class="small">突破加強確認價</div><div class="level">{breakout:.2f}</div><div class="small">若後續突破且量能同步增強，視為更強的加碼／確認條件</div></div>
+    <div class="levelbox"><div class="small">盤中突破／漲停確認價</div><div class="level">{breakout:.2f}</div><div class="small">盤中極端行情會優先採今日可成交上限，不再使用超過漲停價的無效突破門檻</div></div>
     <div class="levelbox"><div class="small">拉回觀察區</div><div class="level">{pull_lo:.2f} ～ {pull_hi:.2f}</div><div class="small">回測止穩且技術轉強，可形成另一種轉強劇本</div></div>
     <div class="levelbox"><div class="small">轉弱警戒</div><div class="level">{weak:.2f}</div><div class="small">跌破後目前短線劇本失效，重新評估</div></div>
   </div>
@@ -3360,6 +3440,24 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
     invalid="—"
 
     if not missing and hi>=lo:
+        _lu,_ld=_tw_limit_prices(prev)
+        _tick=_tw_tick(lp)
+        _pct_live=(lp/prev-1) if prev else 0
+        if np.isfinite(_lu) and lp>=_lu-_tick*0.25 and _pct_live>=0.09:
+            day_sig="極強偏多・漲停"
+            day_reason=f"現價 {lp:.2f}｜今日漲停 {_lu:.2f}｜盤中動能確認"
+            cond="漲停鎖定屬極強動能；若開板，觀察承接與量價是否維持"
+            invalid=f"開板後跌離 {_lu:.2f} 且無法快速收復，重新評估"
+            return {"long":long_sig,"short":short_sig,"day":(day_sig,day_reason),
+                    "day_condition":cond,"day_invalid":invalid}
+        if np.isfinite(_ld) and lp<=_ld+_tick*0.25 and _pct_live<=-0.09:
+            day_sig="極弱偏空・跌停"
+            day_reason=f"現價 {lp:.2f}｜今日跌停 {_ld:.2f}｜盤中弱勢確認"
+            cond="跌停屬極弱動能；若打開跌停，觀察是否出現有效承接"
+            invalid=f"脫離 {_ld:.2f} 並持續站回，重新評估"
+            return {"long":long_sig,"short":short_sig,"day":(day_sig,day_reason),
+                    "day_condition":cond,"day_invalid":invalid}
+
         rng=max(hi-lo,0.01)
         pos=(lp-lo)/rng
         pct=(lp/prev-1) if prev else 0
@@ -3394,8 +3492,8 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
             "day_condition":cond,"day_invalid":invalid}
 
 def _v164_color(sig):
-    if sig in ("符合買進條件","偏多當沖","偏多當沖・確認"): return "#ff4d4f"   # 台股紅=多
-    if sig in ("符合放空條件","偏空當沖","偏空當沖・確認"): return "#21c77a" # 台股綠=空
+    if sig in ("符合買進條件","偏多當沖","偏多當沖・確認","極強偏多・漲停"): return "#ff4d4f"   # 台股紅=多
+    if sig in ("符合放空條件","偏空當沖","偏空當沖・確認","極弱偏空・跌停"): return "#21c77a" # 台股綠=空
     if "等待" in sig: return "#f0ad4e"
     return "#aab4c0"
 
