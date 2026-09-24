@@ -928,7 +928,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17.4")
+    st.markdown("## AI 條件機率｜V17.5")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1857,7 +1857,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.4 方向／進場分離版
+    AI ACTION CENTER｜V17.5 方向／進場顯示修正版
     </div>
   <div class="decision-grid">
     <div>
@@ -3526,42 +3526,62 @@ def _v164_color(sig):
     return "#aab4c0"
 
 def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0, master_long_signal=None):
-    market_direction = d.get("market_direction", "—")
-    entry_state = d.get("entry_state", d.get("long", "等待"))
     r=_v164_long_short_daytrade(price_df,quote,p1,p5,inst_score)
-    # V16.7: 多單訊號與最上方 ACTION CENTER 共用同一個最終訊號。
-    if master_long_signal:
-        master_txt=str(master_long_signal).strip()
-        if "符合買進" in master_txt or master_txt in ("可買進","偏多確認"):
-            long_item=("符合買進條件","與 ACTION CENTER 同步")
-        elif "等待買進" in master_txt:
-            long_item=("等待買進","與 ACTION CENTER 同步")
-        elif "減碼" in master_txt or "賣出" in master_txt or "風險偏高" in master_txt:
-            long_item=("觀望","ACTION CENTER 顯示風險升高")
-        else:
-            long_item=("觀望","與 ACTION CENTER 同步")
-    else:
-        long_item=r["long"]
 
-    items=[
-        ("多單訊號",long_item[0],long_item[1]),
-        ("放空訊號",r["short"][0],r["short"][1]),
-        ("當沖訊號",r["day"][0],r["day"][1]),
-    ]
+    # V17.5：第一張卡只顯示「市場方向＋進場狀態」，
+    # 不再讓舊版 master_long_signal 把它覆蓋成「等待買進」。
+    market_direction=str(r.get("market_direction","—"))
+    entry_state=str(r.get("entry_state","等待更明確進場條件"))
+
+    if "極強偏多" in market_direction or "強勢偏多" in market_direction:
+        direction_color="#ff4d4f"
+    elif "偏多" in market_direction:
+        direction_color="#ff9f1a"
+    elif "極弱偏空" in market_direction or "強勢偏空" in market_direction:
+        direction_color="#21c77a"
+    elif "偏空" in market_direction:
+        direction_color="#62d99a"
+    else:
+        direction_color="#b9c6d8"
+
+    short_sig,short_reason=r["short"]
+    day_sig,day_reason=r["day"]
+
     st.markdown("## ⚡ 多空・當沖決策")
     cols=st.columns(3)
-    for col,(label,sig,reason) in zip(cols,items):
-        color=_v164_color(sig)
-        col.markdown(f"""<div style="border:1px solid {color};border-radius:14px;padding:14px;
-        background:rgba(8,20,35,.78);min-height:116px">
-        <div style="font-size:.78rem;opacity:.72">{label}</div>
-        <div style="font-size:1.28rem;font-weight:850;color:{color};margin:7px 0">{sig}</div>
-        <div style="font-size:.78rem;opacity:.78">{reason}</div></div>""",unsafe_allow_html=True)
+
+    # 第一張：方向與進場完全分離
+    cols[0].markdown(f"""<div style="border:1px solid {direction_color};border-radius:14px;padding:14px;
+    background:rgba(8,20,35,.78);min-height:116px">
+    <div style="font-size:.78rem;opacity:.72">多方方向</div>
+    <div style="font-size:1.28rem;font-weight:850;color:{direction_color};margin:7px 0">{market_direction}</div>
+    <div style="font-size:.82rem;opacity:.92"><b>進場狀態：</b>{entry_state}</div>
+    </div>""",unsafe_allow_html=True)
+
+    # 第二張：放空訊號
+    c2=_v164_color(short_sig)
+    cols[1].markdown(f"""<div style="border:1px solid {c2};border-radius:14px;padding:14px;
+    background:rgba(8,20,35,.78);min-height:116px">
+    <div style="font-size:.78rem;opacity:.72">放空訊號</div>
+    <div style="font-size:1.28rem;font-weight:850;color:{c2};margin:7px 0">{short_sig}</div>
+    <div style="font-size:.78rem;opacity:.78">{short_reason}</div>
+    </div>""",unsafe_allow_html=True)
+
+    # 第三張：當沖訊號
+    c3=_v164_color(day_sig)
+    cols[2].markdown(f"""<div style="border:1px solid {c3};border-radius:14px;padding:14px;
+    background:rgba(8,20,35,.78);min-height:116px">
+    <div style="font-size:.78rem;opacity:.72">當沖訊號</div>
+    <div style="font-size:1.28rem;font-weight:850;color:{c3};margin:7px 0">{day_sig}</div>
+    <div style="font-size:.78rem;opacity:.78">{day_reason}</div>
+    </div>""",unsafe_allow_html=True)
+
     st.markdown(f"""<div style="margin-top:8px;padding:10px 12px;border-radius:10px;
     background:rgba(255,255,255,.035);font-size:.82rem">
     <b>當沖觸發：</b>{r['day_condition']}<br>
     <b>當沖失效：</b>{r['day_invalid']}
     </div>""",unsafe_allow_html=True)
+
     q=quote if isinstance(quote,dict) else {}
     _diag_prev=_v164_num(q.get("prev_close"))
     if _diag_prev is None:
@@ -3576,6 +3596,7 @@ def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0, master_long_sig
                     _diag_prev=float(_hc.iloc[-2])
         except Exception:
             pass
+
     _vals=[
         ("現價",_v164_num(q.get("price"))),("開盤",_v164_num(q.get("open"))),
         ("最高",_v164_num(q.get("high"))),("最低",_v164_num(q.get("low"))),
@@ -3583,7 +3604,7 @@ def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0, master_long_sig
     ]
     _txt="｜".join([f"{k} {v:.2f}" if v is not None else f"{k} 未取得" for k,v in _vals])
     st.caption("盤中資料｜"+_txt)
-    st.caption("以上為模型條件訊號；當沖與放空需另確認個股交易資格、借券/融券與即時流動性。")
+    st.caption("方向代表模型對盤中強弱的判定；進場狀態代表目前是否符合執行條件。當沖與放空仍需確認個股交易資格、借券/融券與即時流動性。")
 
 # Render V16.4 panel after all definitions, using existing app variables.
 try:
