@@ -928,7 +928,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17.5")
+    st.markdown("## AI 條件機率｜V17.6")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1857,7 +1857,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.5 方向／進場顯示修正版
+    AI ACTION CENTER｜V17.6 多週期趨勢分層版
     </div>
   <div class="decision-grid">
     <div>
@@ -2030,64 +2030,103 @@ st.markdown(f"""
 """,unsafe_allow_html=True)
 
 
-st.markdown("### 趨勢燈號")
-c1,c2,c3=st.columns(3)
-for col,title,score,period in zip([c1,c2,c3],["短線","中線","長線"],[short,mid,long],["1–10 交易日","2–6 週","1–6 個月"]):
-    lab,ico=trend_label(score)
-    with col:
-        st.markdown(f"""<div class="panel"><div class="kicker">{period}</div>
-        <div style="font-size:24px;font-weight:900">{ico} {title}｜{lab}</div>
-        <div class="gold" style="font-size:22px;font-weight:900">趨勢狀態｜{lab}</div></div>""",unsafe_allow_html=True)
-
-_v10_p1,_v10_p5=_v10_probability_panel(price)
-_v13_settle_ledger(sid,price)
-_v13_record_prediction(sid,name,price,_v10_p1,_v10_p5)
-_v13_regime=_v13_market_regime(price,inst if "inst" in globals() else None)
-try:
-    _v13_signal,_v14_signal_reason=_v14_unified_signal(
-        _v13_regime,_v10_p1,_v10_p5,
-        short_score=short if "short" in locals() else None,
-        inst_score=inst_score if "inst_score" in locals() else None
-    )
-    _,_v13_invalid=_v13_trade_plan(current,support,resistance,_v13_regime,_v10_p1,_v10_p5)
-except Exception:
-    _v13_signal,_v14_signal_reason,_v13_invalid="觀望","決策條件尚未完整",np.nan
-
-
-# V13.11 判斷失效價：優先使用已計算的20日支撐，其次60日支撐，
-# 再以目前價格的5%風險帶備援。這只是模型重新評估參考，不是保證停損價。
-def _v1311_valid_num(x):
+# V17.6｜多週期趨勢分層：盤中、短線、中線、長線不再共用同一個結論。
+def _v176_num(v, default=np.nan):
     try:
-        v = float(x)
-        return v if np.isfinite(v) and v > 0 else np.nan
+        x=float(v)
+        return x if np.isfinite(x) else default
     except Exception:
-        return np.nan
+        return default
 
-_v1311_price = _v1311_valid_num(current_price if "current_price" in locals() else close)
-_v1311_s20 = _v1311_valid_num(support20 if "support20" in locals() else np.nan)
-_v1311_s60 = _v1311_valid_num(support60 if "support60" in locals() else np.nan)
+def _v176_horizon_signals(price_df, quote, p1=None, p5=None, inst_score=0):
+    df=price_df.copy()
+    c=pd.to_numeric(df.get("close"),errors="coerce").dropna()
+    if len(c)<25:
+        return {
+            "short":("資料不足","等待更多歷史資料"),
+            "mid":("資料不足","等待更多歷史資料"),
+            "long":("資料不足","等待更多歷史資料")
+        }
 
-_v1311_candidates = [
-    v for v in (_v1311_s20, _v1311_s60)
-    if np.isfinite(v) and (not np.isfinite(_v1311_price) or v < _v1311_price)
-]
+    last=float(c.iloc[-1])
+    ma5=float(c.tail(5).mean())
+    ma20=float(c.tail(20).mean())
+    ma60=float(c.tail(min(60,len(c))).mean())
+    ma120=float(c.tail(min(120,len(c))).mean())
 
-if _v1311_candidates:
-    v1311_invalidation = max(_v1311_candidates)
-    v1311_invalidation_source = "近期技術支撐"
-elif np.isfinite(_v1311_price):
-    v1311_invalidation = _v1311_price * 0.95
-    v1311_invalidation_source = "價格風險帶"
-else:
-    v1311_invalidation = np.nan
-    v1311_invalidation_source = "尚無足夠價格資料"
+    r5=last/float(c.iloc[-6])-1 if len(c)>=6 else 0
+    r20=last/float(c.iloc[-21])-1 if len(c)>=21 else 0
+    r60=last/float(c.iloc[-61])-1 if len(c)>=61 else 0
 
-v1311_invalidation_text = (
-    f"{v1311_invalidation:,.2f} 元"
-    if np.isfinite(v1311_invalidation)
-    else "尚未形成有效失效價"
-)
+    pp1=_prob_scalar(p1)
+    pp5=_prob_scalar(p5)
 
+    q=quote if isinstance(quote,dict) else {}
+    live=_v176_num(q.get("price"))
+    prev=_v176_num(q.get("prev_close"))
+    if not np.isfinite(prev): prev=_v176_num(q.get("y"))
+    intraday=(live/prev-1) if np.isfinite(live) and np.isfinite(prev) and prev>0 else 0
+
+    # 短線：模型機率＋MA5/20＋5日動能；盤中只作「加權」，不直接決定全部週期。
+    ss=0
+    ss += 1 if last>=ma5 else -1
+    ss += 1 if ma5>=ma20 else -1
+    ss += 1 if r5>0.02 else (-1 if r5<-0.02 else 0)
+    if pp1 is not None: ss += 1 if pp1>=0.55 else (-1 if pp1<=0.45 else 0)
+    if pp5 is not None: ss += 1 if pp5>=0.55 else (-1 if pp5<=0.45 else 0)
+    if intraday>=0.07: ss += 1
+    elif intraday<=-0.07: ss -= 1
+
+    # 中線：MA20/60、20日報酬、5日模型與籌碼；刻意不直接使用漲停。
+    ms=0
+    ms += 1 if last>=ma20 else -1
+    ms += 1 if ma20>=ma60 else -1
+    ms += 1 if r20>0.04 else (-1 if r20<-0.04 else 0)
+    if pp5 is not None: ms += 1 if pp5>=0.58 else (-1 if pp5<=0.42 else 0)
+    try:
+        ii=float(inst_score)
+        ms += 1 if ii>=60 else (-1 if ii<=40 else 0)
+    except Exception:
+        pass
+
+    # 長線：MA60/120、60日報酬；不使用當日漲跌與當沖訊號。
+    ls=0
+    ls += 1 if last>=ma60 else -1
+    ls += 1 if ma60>=ma120 else -1
+    ls += 1 if r60>0.08 else (-1 if r60<-0.08 else 0)
+
+    def label(score, strong=4):
+        if score>=strong: return "強勢偏多"
+        if score>=1: return "偏多"
+        if score<=-strong: return "強勢偏空"
+        if score<=-1: return "偏空"
+        return "中性震盪"
+
+    return {
+        "short":(label(ss,4),f"短線分數 {ss:+d}｜1日/5日機率＋MA5/20＋近期動能"),
+        "mid":(label(ms,3),f"中線分數 {ms:+d}｜MA20/60＋20日趨勢＋籌碼"),
+        "long":(label(ls,3),f"長線分數 {ls:+d}｜MA60/120＋60日趨勢")
+    }
+
+_v176=_v176_horizon_signals(price,rt,p1,p5,inst_score)
+
+def _v176_color(sig):
+    if "強勢偏多" in sig: return "#ff4d4f"
+    if "偏多" in sig: return "#ff9f1a"
+    if "強勢偏空" in sig: return "#21c77a"
+    if "偏空" in sig: return "#62d99a"
+    return "#b9c6d8"
+
+st.markdown("## 趨勢燈號")
+_v176_cols=st.columns(3)
+for _col,_title,_key in zip(_v176_cols,["短線｜1–10交易日","中線｜2–6週","長線｜1–6月"],["short","mid","long"]):
+    _sig,_reason=_v176[_key]
+    _cc=_v176_color(_sig)
+    _col.markdown(f"""<div style="border:1px solid #263b55;border-radius:12px;padding:13px;background:rgba(8,20,35,.72);min-height:108px">
+    <div style="font-size:.74rem;opacity:.70">{_title}</div>
+    <div style="font-size:1.15rem;font-weight:850;color:{_cc};margin:7px 0">{_sig}</div>
+    <div style="font-size:.76rem;opacity:.78">{_reason}</div>
+    </div>""",unsafe_allow_html=True)
 
 st.markdown("## V15.3 統一決策中心")
 
