@@ -928,7 +928,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17.6.4")
+    st.markdown("## AI 條件機率｜V17.6.5")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1857,7 +1857,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.6.4 執行順序修正版
+    AI ACTION CENTER｜V17.6.5 舊模組清理版
     </div>
   <div class="decision-grid">
     <div>
@@ -2172,29 +2172,9 @@ for _col,_title,_key in zip(_v176_cols,["短線｜1–10交易日","中線｜2�
     <div style="font-size:.76rem;opacity:.78">{_reason}</div>
     </div>""",unsafe_allow_html=True)
 
-st.markdown("## V15.3 統一決策中心")
-
-_v13a,_v13b,_v13c=st.columns(3)
-_v13a.metric("市場狀態",_v13_regime)
-_v13b.metric("模型訊號",_v13_signal)
-
-# 優先採用原模型可用的失效價；若原模型無法產生，就使用 V13.11 備援失效價。
-if pd.notna(_v13_invalid):
-    _v1313_invalid_text = f"{float(_v13_invalid):,.2f} 元"
-    _v1313_source = "模型技術條件"
-else:
-    _v1313_invalid_text = v1311_invalidation_text
-    _v1313_source = v1311_invalidation_source
-
-_v13c.metric("判斷失效價", _v1313_invalid_text)
-st.caption(
-    f"統一訊號依據：{_v14_signal_reason}。"
-    f" 判斷失效價依據：{_v1313_source}；跌破後應重新評估目前模型判斷。"
-)
-_v14_validation_panel(_v10_p1,_v10_p5)
-_v13_accuracy_panel(sid)
-st.caption("實戰預測目前仍使用 Streamlit 執行環境暫存；網站重新部署或休眠後可能重置。要永久保存戰績，需要再連接外部資料庫。")
-
+# V17.6.5：舊版 V15.3 統一決策中心已移除。
+# 現在由上方 V17.x ACTION CENTER、多空當沖、AI 綜合判斷與多週期趨勢燈號統一呈現。
+# 保留後續關鍵價位與其他分析模組。
 
 st.markdown("### 關鍵價位")
 a,b,c,e=st.columns(4)
