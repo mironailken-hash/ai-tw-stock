@@ -928,7 +928,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17.6")
+    st.markdown("## AI 條件機率｜V17.6.1")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1857,7 +1857,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.6 多週期趨勢分層版
+    AI ACTION CENTER｜V17.6.1 多週期趨勢修正版
     </div>
   <div class="decision-grid">
     <div>
@@ -2108,7 +2108,10 @@ def _v176_horizon_signals(price_df, quote, p1=None, p5=None, inst_score=0):
         "long":(label(ls,3),f"長線分數 {ls:+d}｜MA60/120＋60日趨勢")
     }
 
-_v176=_v176_horizon_signals(price,rt,p1,p5,inst_score)
+# V17.6.1：部分股票流程在此區塊前尚未建立 inst_score。
+# 缺少籌碼分數時採中性 50，不讓趨勢燈號造成整個 App 中斷。
+_v176_inst_score = globals().get("inst_score", 50)
+_v176=_v176_horizon_signals(price,rt,p1,p5,_v176_inst_score)
 
 def _v176_color(sig):
     if "強勢偏多" in sig: return "#ff4d4f"
