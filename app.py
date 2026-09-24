@@ -21,6 +21,10 @@ import xml.etree.ElementTree as ET
 import base64
 from pathlib import Path
 from datetime import date, timedelta
+from zoneinfo import ZoneInfo
+
+APP_VERSION = "V17.7"
+APP_RELEASE_TIME = "2026/09/24 12:16:55"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -928,7 +932,7 @@ def _v10_walk_forward_probability(df,horizon=1):
         return None,diag
 
 def _v10_probability_panel(df):
-    st.markdown("## AI 條件機率｜V17.6.5")
+    st.markdown("## AI 條件機率｜V17.7")
     st.caption("盤前也可計算：這裡使用已完成的歷史日線。盤中即時資料屬另一套模型，不會混入此處。")
     r1,d1=_v10_walk_forward_probability(df,1)
     r5,d5=_v10_walk_forward_probability(df,5)
@@ -1481,6 +1485,16 @@ hero_bg = (
     if BANNER_B64 else
     "linear-gradient(110deg,#07182a,#020811)"
 )
+st.markdown(f"""
+<div style="
+    display:flex;justify-content:space-between;align-items:center;gap:12px;
+    flex-wrap:wrap;margin:0 0 8px 0;padding:8px 12px;border:1px solid #8f7425;
+    border-radius:10px;background:rgba(9,24,40,.88);font-size:13px">
+  <div style="font-weight:900;color:#f3cc58">KEN AI｜目前版本 {APP_VERSION}</div>
+  <div style="color:#d7e3ef">版本更新時間｜{APP_RELEASE_TIME}（台灣時間）</div>
+</div>
+""", unsafe_allow_html=True)
+
 st.markdown('<div class="top-signature">投顧大師 謝子鵬・與你攜手第一個百億　｜　版權使用：社團法人台灣美業國際交流協會</div>', unsafe_allow_html=True)
 
 st.markdown(f"""
@@ -1857,7 +1871,7 @@ st.markdown(f"""
   <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
     color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
     letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.6.5 舊模組清理版
+    AI ACTION CENTER｜V17.7 程式健檢版
     </div>
   <div class="decision-grid">
     <div>
