@@ -20,11 +20,11 @@ except Exception as _skerr:
 import xml.etree.ElementTree as ET
 import base64
 from pathlib import Path
-from datetime import date, timedelta, datetime, timezone
+from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 APP_VERSION = "V17.8"
-APP_RELEASE_TIME = "2026/09/25 13:51:00"
+APP_RELEASE_TIME = "2026/09/25 14:25:00"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -121,163 +121,6 @@ st.markdown(r"""
 }
 </style>
 """, unsafe_allow_html=True)
-
-
-# =========================================================
-# V17.8｜KEN AI 專用會員登入／7天試用／到期鎖定
-# =========================================================
-def _ken_secret(name, default=""):
-    try:
-        return str(st.secrets.get(name, default)).strip()
-    except Exception:
-        return default
-
-
-def _ken_auth_headers():
-    key = _ken_secret("SUPABASE_KEY")
-    return {
-        "apikey": key,
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-    }
-
-
-def _ken_sign_in(email, password):
-    base = _ken_secret("SUPABASE_URL").rstrip("/")
-    key = _ken_secret("SUPABASE_KEY")
-    if not base or not key:
-        return None, "系統尚未完成會員連線設定。"
-    try:
-        r = requests.post(
-            f"{base}/auth/v1/token?grant_type=password",
-            headers={"apikey": key, "Content-Type": "application/json"},
-            json={"email": email.strip(), "password": password},
-            timeout=12,
-        )
-        if r.status_code != 200:
-            return None, "帳號或密碼錯誤。"
-        data = r.json()
-        user = data.get("user") or {}
-        if not user.get("email"):
-            return None, "登入驗證失敗。"
-        return {"email": user.get("email"), "access_token": data.get("access_token", "")}, ""
-    except Exception:
-        return None, "目前無法連線會員系統，請稍後再試。"
-
-
-def _ken_member_record(email):
-    base = _ken_secret("SUPABASE_URL").rstrip("/")
-    if not base:
-        return None
-    try:
-        r = requests.get(
-            f"{base}/rest/v1/ken_ai_members",
-            headers=_ken_auth_headers(),
-            params={"username": f"eq.{email}", "select": "*", "limit": "1"},
-            timeout=12,
-        )
-        if r.status_code != 200:
-            return None
-        rows = r.json()
-        return rows[0] if rows else None
-    except Exception:
-        return None
-
-
-def _ken_parse_time(value):
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except Exception:
-        return None
-
-
-def _ken_access_status(member):
-    if not member:
-        return False, "此帳號尚未取得 KEN AI 使用授權。", None
-    if str(member.get("status", "")).lower() != "active":
-        return False, "此帳號目前已停用。", None
-    if bool(member.get("is_permanent")) or str(member.get("plan", "")).lower() == "permanent":
-        return True, "永久授權", None
-    expiry = _ken_parse_time(member.get("expire_at"))
-    if not expiry:
-        return False, "此帳號尚未設定有效期限。", None
-    if expiry.tzinfo is None:
-        expiry = expiry.replace(tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc)
-    if now >= expiry:
-        return False, "試用／授權期限已到期。", expiry
-    remain_seconds = max(0, (expiry - now).total_seconds())
-    remain_days = int(remain_seconds // 86400)
-    if remain_seconds % 86400:
-        remain_days += 1
-    return True, f"試用／授權剩餘 {remain_days} 天", expiry
-
-
-def _ken_login_gate():
-    # 每次重跑都重新讀取會員資料，因此管理者在 Supabase 停用或延長後可立即生效。
-    if st.session_state.get("ken_logged_in") and st.session_state.get("ken_email"):
-        member = _ken_member_record(st.session_state["ken_email"])
-        ok, label, expiry = _ken_access_status(member)
-        if ok:
-            st.session_state["ken_member"] = member
-            with st.sidebar:
-                st.markdown("### 👤 KEN AI 會員")
-                st.caption(st.session_state["ken_email"])
-                if member and member.get("is_admin"):
-                    st.success("管理員｜永久授權")
-                else:
-                    st.info(label)
-                if st.button("登出", key="ken_logout", use_container_width=True):
-                    for k in ["ken_logged_in", "ken_email", "ken_member", "ken_access_token"]:
-                        st.session_state.pop(k, None)
-                    st.rerun()
-            return
-        for k in ["ken_logged_in", "ken_email", "ken_member", "ken_access_token"]:
-            st.session_state.pop(k, None)
-        st.error(label)
-
-    st.markdown("""
-    <div style="max-width:520px;margin:7vh auto 18px auto;padding:28px;border:1px solid rgba(233,198,92,.42);border-radius:22px;background:linear-gradient(145deg,#0b1b2d,#06101c);box-shadow:0 24px 70px rgba(0,0,0,.38);text-align:center;">
-      <div style="font-size:30px;font-weight:900;color:#fff;">KEN AI</div>
-      <div style="font-size:18px;font-weight:800;color:#E9C65C;margin-top:4px;">百億台股智慧決策系統</div>
-      <div style="color:#9db5ce;margin-top:8px;">會員登入</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    _, mid, _ = st.columns([1, 1.25, 1])
-    with mid:
-        with st.form("ken_login_form", clear_on_submit=False):
-            email = st.text_input("Email 帳號", placeholder="請輸入 Email")
-            password = st.text_input("密碼", type="password", placeholder="請輸入密碼")
-            submit = st.form_submit_button("登入 KEN AI", use_container_width=True)
-        if submit:
-            if not email.strip() or not password:
-                st.warning("請輸入 Email 與密碼。")
-            else:
-                auth, err = _ken_sign_in(email, password)
-                if not auth:
-                    st.error(err)
-                else:
-                    member = _ken_member_record(auth["email"])
-                    ok, label, expiry = _ken_access_status(member)
-                    if not ok:
-                        st.error(label)
-                        if expiry:
-                            tw = expiry.astimezone(ZoneInfo("Asia/Taipei"))
-                            st.caption(f"到期時間：{tw.strftime('%Y/%m/%d %H:%M:%S')}（台灣時間）")
-                    else:
-                        st.session_state["ken_logged_in"] = True
-                        st.session_state["ken_email"] = auth["email"]
-                        st.session_state["ken_access_token"] = auth.get("access_token", "")
-                        st.session_state["ken_member"] = member
-                        st.rerun()
-        st.caption("試用帳號到期後將自動停止使用；正式授權請洽管理單位。")
-    st.stop()
-
-
-_ken_login_gate()
 
 API = "https://api.finmindtrade.com/api/v4/data"
 
@@ -1631,6 +1474,197 @@ def attack_status(short, close, support, resistance, vol_ratio, inst_score=50):
         label="🔴 模型訊號：賣出"
         reason="短線趨勢與動能明顯偏弱，模型進入防守狀態。"
     return label,reason,breakout,pull_lo,pull_hi,weak,confirmations
+
+
+
+# =========================
+# V17.8｜會員登入 / 30天試用 / 管理員授權
+# =========================
+def _mem_cfg():
+    try:
+        return str(st.secrets.get("SUPABASE_URL","")).rstrip("/"), str(st.secrets.get("SUPABASE_KEY","")).strip()
+    except Exception:
+        return "", ""
+
+def _mem_h(token=None):
+    u,k=_mem_cfg()
+    return {"apikey":k,"Authorization":f"Bearer {token or k}","Content-Type":"application/json"}
+
+def _mem_login(email,pw):
+    u,k=_mem_cfg()
+    try:
+        r=requests.post(f"{u}/auth/v1/token?grant_type=password",headers=_mem_h(),
+                        json={"email":email.strip(),"password":pw},timeout=15)
+        d=r.json() if r.content else {}
+        return (d,"") if r.status_code==200 and d.get("access_token") else (None,str(d.get("msg") or d.get("error_description") or d.get("message") or "登入失敗"))
+    except Exception as e:
+        return None,f"連線失敗：{type(e).__name__}"
+
+def _mem_signup(name,email,pw):
+    u,k=_mem_cfg()
+    try:
+        r=requests.post(f"{u}/auth/v1/signup",headers=_mem_h(),
+                        json={"email":email.strip(),"password":pw,"data":{"display_name":name.strip()}},timeout=15)
+        d=r.json() if r.content else {}
+        return (d,"") if r.status_code in (200,201) and d.get("user") else (None,str(d.get("msg") or d.get("error_description") or d.get("message") or "註冊失敗"))
+    except Exception as e:
+        return None,f"連線失敗：{type(e).__name__}"
+
+def _mem_get(email):
+    u,k=_mem_cfg()
+    try:
+        r=requests.get(f"{u}/rest/v1/ken_ai_members",headers=_mem_h(),
+            params={"username":f"eq.{email}","select":"*","limit":"1"},timeout=12)
+        a=r.json() if r.status_code==200 else []
+        return a[0] if a else None
+    except Exception:
+        return None
+
+def _mem_all():
+    u,k=_mem_cfg()
+    try:
+        r=requests.get(f"{u}/rest/v1/ken_ai_members",headers=_mem_h(),
+            params={"select":"*","order":"updated_at.desc"},timeout=12)
+        return r.json() if r.status_code==200 else []
+    except Exception:
+        return []
+
+def _mem_set(email,plan):
+    u,k=_mem_cfg()
+    try:
+        r=requests.post(f"{u}/rest/v1/rpc/set_ken_ai_plan",headers={**_mem_h(),"Prefer":"return=minimal"},
+                        json={"p_username":email,"p_plan":plan},timeout=12)
+        return r.status_code in (200,204), ("" if r.status_code in (200,204) else r.text[:180])
+    except Exception as e:
+        return False,type(e).__name__
+
+def _mem_time(v):
+    if not v:return None
+    try:
+        t=pd.Timestamp(v)
+        if t.tzinfo is None:t=t.tz_localize("UTC")
+        return t.tz_convert("Asia/Taipei")
+    except Exception:return None
+
+def _mem_state(m):
+    if not m:return False,"找不到會員資料",0
+    if str(m.get("status","")).lower()!="active":return False,"帳號已停用",0
+    if bool(m.get("is_permanent")):return True,"永久會員",None
+    e=_mem_time(m.get("expire_at"))
+    if e is None:return False,"沒有有效到期日",0
+    sec=(e-pd.Timestamp.now(tz="Asia/Taipei")).total_seconds()
+    if sec<=0:return False,"會員期限已到期",0
+    d=max(1,int(np.ceil(sec/86400)))
+    return True,f"剩餘 {d} 天",d
+
+def _mem_plan(m):
+    if bool(m.get("is_permanent")):return "永久會員"
+    return {"trial":"免費試用","trial_30d":"30天免費試用","3_months":"3個月會員",
+            "6_months":"6個月會員","12_months":"12個月會員","permanent":"永久會員"}.get(str(m.get("plan")),str(m.get("plan") or "會員"))
+
+def _mem_logout():
+    for k in ("ken_token","ken_email","ken_uid"):st.session_state.pop(k,None)
+    st.rerun()
+
+def _mem_admin():
+    rows=_mem_all()
+    with st.expander("🛠️ 管理員｜會員管理",expanded=False):
+        st.caption("可設定 3 個月、6 個月、12 個月、永久會員或停用。")
+        if not rows:
+            st.info("目前沒有可顯示的會員資料。");return
+        labels=[f"{x.get('username','')}｜{_mem_plan(x)}｜{x.get('status','')}" for x in rows]
+        idx=st.selectbox("選擇會員",range(len(labels)),format_func=lambda i:labels[i],key="mem_admin_user")
+        m=rows[idx]; e=_mem_time(m.get("expire_at"))
+        st.write("帳號：",m.get("username",""))
+        st.write("目前方案：",_mem_plan(m))
+        st.write("到期：","永久" if bool(m.get("is_permanent")) else (e.strftime("%Y/%m/%d %H:%M") if e is not None else "—"))
+        p=st.radio("設定方案",["3個月","6個月","12個月","永久","停用"],horizontal=True,key="mem_admin_plan")
+        mp={"3個月":"3_months","6個月":"6_months","12個月":"12_months","永久":"permanent","停用":"disabled"}
+        if st.button("確認更新會員",type="primary",key="mem_admin_apply"):
+            ok,msg=_mem_set(str(m.get("username","")),mp[p])
+            if ok:st.success("會員方案已更新");st.rerun()
+            else:st.error("更新失敗："+msg)
+
+def _mem_gate():
+    u,k=_mem_cfg()
+    if not u or not k:
+        st.error("會員系統尚未連線，請確認 Streamlit Secrets 的 SUPABASE_URL 與 SUPABASE_KEY。");st.stop()
+
+    if not st.session_state.get("ken_token"):
+        st.markdown("""
+        <div style="max-width:760px;margin:35px auto 15px;padding:28px;border:1px solid #8f7425;border-radius:18px;
+        background:linear-gradient(145deg,#07182a,#020811);text-align:center">
+        <div style="font-size:30px;font-weight:900;color:#f3cc58">KEN AI 百億台股智慧決策系統</div>
+        <div style="margin-top:8px;color:#d7e3ef">會員登入｜新會員免費試用 30 天</div></div>
+        """,unsafe_allow_html=True)
+        a,b=st.tabs(["會員登入","免費註冊｜30天試用"])
+        with a:
+            with st.form("mem_login"):
+                em=st.text_input("Email"); pw=st.text_input("密碼",type="password")
+                go=st.form_submit_button("登入 KEN AI",use_container_width=True)
+            if go:
+                d,err=_mem_login(em,pw)
+                if d:
+                    st.session_state["ken_token"]=d["access_token"]
+                    st.session_state["ken_email"]=(d.get("user") or {}).get("email",em.strip())
+                    st.session_state["ken_uid"]=(d.get("user") or {}).get("id","")
+                    st.rerun()
+                else:st.error("登入失敗："+err)
+        with b:
+            st.caption("註冊後由 Supabase 自動建立 30 天免費試用。")
+            with st.form("mem_signup"):
+                nm=st.text_input("顯示名稱"); em2=st.text_input("Email")
+                p1=st.text_input("設定密碼",type="password"); p2=st.text_input("再次輸入密碼",type="password")
+                okbox=st.checkbox("我了解本系統提供市場資料與模型訊號，投資決策仍由使用者自行判斷。")
+                reg=st.form_submit_button("免費註冊｜開始30天試用",use_container_width=True)
+            if reg:
+                if not em2.strip() or not p1:st.error("請輸入 Email 與密碼。")
+                elif p1!=p2:st.error("兩次密碼不同。")
+                elif len(p1)<6:st.error("密碼至少 6 個字元。")
+                elif not okbox:st.warning("請先勾選使用說明。")
+                else:
+                    d,err=_mem_signup(nm,em2,p1)
+                    if d and d.get("access_token"):
+                        st.session_state["ken_token"]=d["access_token"]
+                        st.session_state["ken_email"]=(d.get("user") or {}).get("email",em2.strip())
+                        st.session_state["ken_uid"]=(d.get("user") or {}).get("id","")
+                        st.success("註冊成功，30天試用已開始。");st.rerun()
+                    elif d:st.success("註冊成功。若已啟用 Email 驗證，請先到信箱完成驗證後再登入。")
+                    else:st.error("註冊失敗："+err)
+        st.stop()
+
+    m=_mem_get(st.session_state.get("ken_email",""))
+    if not m:
+        st.error("登入成功，但找不到會員授權資料。請聯絡管理員。")
+        if st.button("登出"): _mem_logout()
+        st.stop()
+    valid,msg,days=_mem_state(m)
+    if not valid:
+        st.markdown("## KEN AI 會員中心");st.error(msg)
+        e=_mem_time(m.get("expire_at"))
+        if e is not None:st.write("原到期日：",e.strftime("%Y/%m/%d %H:%M"))
+        st.info("請聯絡管理員升級或延長會員，可設定 3 個月、6 個月或 12 個月。")
+        if bool(m.get("is_admin")):_mem_admin()
+        if st.button("登出",key="mem_logout_expired"):_mem_logout()
+        st.stop()
+
+    c1,c2,c3,c4=st.columns([2.5,1.3,1.5,.7])
+    c1.markdown(f"**👤 {st.session_state.get('ken_email','')}**")
+    c2.markdown(f"**{_mem_plan(m)}**")
+    e=_mem_time(m.get("expire_at"))
+    c3.markdown(f"**{'永久使用' if bool(m.get('is_permanent')) else msg}**")
+    with c4:
+        if st.button("登出",key="mem_logout_top",use_container_width=True):_mem_logout()
+    if bool(m.get("is_admin")):
+        _mem_admin()
+    else:
+        with st.expander("👤 會員中心｜升級／延長會員",expanded=False):
+            st.write("目前方案：",_mem_plan(m))
+            st.write("使用狀態：",msg)
+            if e is not None:st.write("到期日：",e.strftime("%Y/%m/%d %H:%M"))
+            st.info("需要升級或延長時請聯絡 KEN AI 管理員；可升級 3 個月、6 個月或 12 個月。")
+
+_mem_gate()
 
 
 # =========================
