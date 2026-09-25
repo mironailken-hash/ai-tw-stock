@@ -23,7 +23,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V17.8"
+APP_VERSION = "V17.8-NO-MEMBER"
 APP_RELEASE_TIME = "2026/09/25 14:25:00"
 from urllib.parse import quote
 
@@ -1664,7 +1664,9 @@ def _mem_gate():
             if e is not None:st.write("到期日：",e.strftime("%Y/%m/%d %H:%M"))
             st.info("需要升級或延長時請聯絡 KEN AI 管理員；可升級 3 個月、6 個月或 12 個月。")
 
-_mem_gate()
+# V17.8 TEMP｜會員系統暫停啟用
+# 要恢復會員登入時，把下一行改回：_mem_gate()
+# _mem_gate()
 
 
 # =========================
