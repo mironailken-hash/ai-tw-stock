@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V24.0"
+APP_VERSION = "V24.1"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -2085,30 +2085,7 @@ def _v141_live_quote_component(stock_id, height=150):
 
 
 
-# V15.2 唯一最終決策：與原 ACTION CENTER 使用完全相同結果
-st.markdown(f"""
-<div class="decision">
-  <div style="display:inline-block;background:linear-gradient(90deg,#E8C35A,#F5DC8B);
-    color:#08111D;padding:7px 14px;border-radius:8px;font-size:14px;font-weight:950;
-    letter-spacing:.8px;box-shadow:0 0 20px rgba(232,195,90,.22);margin-bottom:12px">
-    AI ACTION CENTER｜V17.7 程式健檢版
-    </div>
-  <div class="decision-grid">
-    <div>
-      <div class="decision-status">{status}</div>
-      <div class="decision-note">{status_reason}</div>
-      <div class="small" style="margin-top:7px">資料：{data_mode}｜{data_time}｜條件確認 {confirmations}/4</div>
-    </div>
-    <div class="decision-score"><span style="font-size:22px">趨勢強度：</span>{short_label}</div>
-  </div>
-  <div class="level-grid">
-    <div class="levelbox"><div class="small">盤中突破／漲停確認價</div><div class="level">{breakout:.2f}</div><div class="small">盤中極端行情會優先採今日可成交上限，不再使用超過漲停價的無效突破門檻</div></div>
-    <div class="levelbox"><div class="small">拉回觀察區</div><div class="level">{pull_lo:.2f} ～ {pull_hi:.2f}</div><div class="small">回測止穩且技術轉強，可形成另一種轉強劇本</div></div>
-    <div class="levelbox"><div class="small">轉弱警戒</div><div class="level">{weak:.2f}</div><div class="small">跌破後目前短線劇本失效，重新評估</div></div>
-  </div>
-</div>
-""",unsafe_allow_html=True)
-
+# V24.1 legacy action center hidden from public dashboard.
 # V16.5：多空・當沖決策固定顯示在 ACTION CENTER 正下方。
 # 先建立位置，等下方模型機率與函式準備完成後，再回填到這裡。
 _v165_trade_decision_slot = st.empty()
@@ -2159,7 +2136,7 @@ def _v143_live_quote_fragment(stock_id):
 
 
 # ===== V13.9 最上方：即時價格 + AI 當沖雷達 =====
-_v143_live_quote_fragment(sid)
+# V24.1 live quote block hidden; current price is summarized above.
 
 
 
@@ -2861,25 +2838,16 @@ def _v22_team(price_df):
 
 _v22=_v22_team(price)
 if _v22:
-    st.markdown("### 🌍 研究團隊摘要")
-    _trend_text = "多方正在進攻" if _v22["tech"]=="多方進攻" else ("空方目前較強" if _v22["tech"]=="空方佔優" else "現在多空拉鋸")
-    _heat_text = "市場很熱" if _v22["attention"]=="非常熱" else ("市場開始升溫" if _v22["attention"]=="升溫" else ("市場偏冷" if _v22["attention"]=="冷清" else "市場熱度正常"))
-    st.success(f"**{_trend_text}｜{_v22['momentum']}｜{_heat_text}｜{_v22['longterm']}**")
-    x1,x2,x3,x4=st.columns(4)
-    x1.metric("現在方向",_v22["tech"])
-    x2.metric("攻擊力",_v22["momentum"])
-    x3.metric("市場熱度",_v22["attention"])
-    x4.metric("長線方向",_v22["longterm"])
-    with st.expander("參考資料｜小字版"):
-        st.caption("技術：價格、成交量、均線、動能、波動 ｜ 籌碼：外資、投信、自營商、融資融券 ｜ 基本面：月營收 ｜ AI：通過可靠度檢查後採攻擊型門檻")
-        st.caption("全球市場資料仍在擴充；尚未驗證完成的資料不會假裝已納入判斷。")
+    with st.expander("研究資料｜需要時再看"):
+        st.caption(f"技術 {_v22['tech']} ｜ 動能 {_v22['momentum']} ｜ 熱度 {_v22['attention']} ｜ 長線 {_v22['longterm']}")
+        st.caption("參考價格、成交量、均線、法人、融資融券與月營收；尚未完成驗證的全球資料不加入權重。")
 
-st.markdown("### 🧱 只看這四個價位")
-a,b,c,e=st.columns(4)
-a.metric("跌到這裡先看支撐",f"{support:.2f}")
-b.metric("漲到這裡先看壓力",f"{resistance:.2f}")
-c.metric("中線防守",f"{support60:.2f}")
-e.metric("中線突破目標",f"{resistance60:.2f}")
+st.markdown("### 🧱 三個關鍵價位")
+k1,k2,k3=st.columns(3)
+k1.metric("拉回先看",f"{support:.2f}")
+k2.metric("目前壓力",f"{resistance:.2f}")
+k3.metric("突破再看",f"{resistance60:.2f}")
+st.caption("守住拉回價＝多方還在；突破壓力＝再看下一段；跌破支撐＝重新評估。")
 
 if own=="已持有" and cost>0:
     st.markdown("### 我的持股")
