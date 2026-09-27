@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V23.0"
+APP_VERSION = "V24.0"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -2712,8 +2712,8 @@ def _v20_structure_trend(data, horizon):
         return "資料不足"
 
 def _v181_render(price_df,sid,token):
-    st.markdown("## 🔭 AI 未來方向")
-    st.caption("先看方向，再看機率。紅＝偏多、綠＝偏空、金＝等待。")
+    st.markdown("## 🔭 接下來怎麼走")
+    st.caption("先看方向；需要時再看機率與資料細節。")
 
     end=pd.Timestamp.now(tz="Asia/Taipei").date()
     short_start=end-timedelta(days=1825)
@@ -2751,7 +2751,7 @@ def _v181_render(price_df,sid,token):
         p=anchors[lo]+(anchors[hi]-anchors[lo])*(day-lo)/(hi-lo)
         return float(p),True
 
-    st.markdown("### 📅 未來 10 個交易日｜一眼看方向")
+    st.markdown("### 📅 未來10天")
     rows=[]
     for day in range(1,11):
         p,estimated=_interp_prob(day)
@@ -2812,7 +2812,7 @@ def _v181_render(price_df,sid,token):
         else:
             add="現在不是加碼點，等訊號翻多再動" if p20 is not None and p20<.48 else "先觀察，等待方向更明確"
         risk="短線太熱，最怕急拉後甩尾，追價要小心" if bias20>.15 else ("已跌到中期趨勢下方，要注意轉弱" if last<ma60 else "目前沒有明顯轉空訊號")
-        st.markdown("### 🎯 三句話看懂")
+        st.markdown("### 🎯 現在怎麼看")
         a,b,c=st.columns(3); a.info(f"**已經持有**\n\n{hold}"); b.info(f"**想買／加碼**\n\n{add}"); c.warning(f"**要小心**\n\n{risk}")
 
     with st.expander("資料日期｜需要時再看"):
@@ -2861,7 +2861,7 @@ def _v22_team(price_df):
 
 _v22=_v22_team(price)
 if _v22:
-    st.markdown("### 🌍 研究團隊一句話")
+    st.markdown("### 🌍 研究團隊摘要")
     _trend_text = "多方正在進攻" if _v22["tech"]=="多方進攻" else ("空方目前較強" if _v22["tech"]=="空方佔優" else "現在多空拉鋸")
     _heat_text = "市場很熱" if _v22["attention"]=="非常熱" else ("市場開始升溫" if _v22["attention"]=="升溫" else ("市場偏冷" if _v22["attention"]=="冷清" else "市場熱度正常"))
     st.success(f"**{_trend_text}｜{_v22['momentum']}｜{_heat_text}｜{_v22['longterm']}**")
