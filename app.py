@@ -2903,7 +2903,12 @@ fig.update_layout(
     xaxis=dict(showgrid=False, color="#8EA7BE", zeroline=False),
     yaxis=dict(gridcolor="rgba(110,145,175,.14)", color="#8EA7BE", zeroline=False),
 )
-st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+try:
+    # Streamlit 新版以 width="stretch" 取代已淘汰的 use_container_width。
+    st.plotly_chart(fig, width="stretch", config={"displayModeBar": False})
+except TypeError:
+    # 舊版 Streamlit 相容處理。
+    st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 # V20：三大法人明細與券商研究移到後台，不在主頁攤開。
 # inst / inst_net 仍保留供模型與內部判斷使用。
