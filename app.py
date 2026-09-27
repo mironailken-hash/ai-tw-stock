@@ -24,8 +24,8 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V18.3"
-APP_RELEASE_TIME = "2026/09/27 13:57:25"
+APP_VERSION = "V18.3.1"
+APP_RELEASE_TIME = "2026/09/27 14:01:29"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -944,7 +944,7 @@ def _v10_probability_panel(df):
             st.markdown(f"### {r1['prob']*100:.1f}%")
             st.caption(f"驗證樣本 {r1['n']}｜Brier {r1['brier']:.3f}｜校準狀態 {r1['status']}")
         else:
-            st.markdown("### 資料不足")
+            st.markdown("### 這次先不要參考")
             st.caption(d1["reason"])
     with c2:
         st.caption("5日上漲機率")
@@ -952,7 +952,7 @@ def _v10_probability_panel(df):
             st.markdown(f"### {r5['prob']*100:.1f}%")
             st.caption(f"驗證樣本 {r5['n']}｜Brier {r5['brier']:.3f}｜校準狀態 {r5['status']}")
         else:
-            st.markdown("### 資料不足")
+            st.markdown("### 這次先不要參考")
             st.caption(d5["reason"])
     st.markdown("#### 模型資料診斷")
     dx1,dx2,dx3,dx4=st.columns(4)
@@ -1050,7 +1050,7 @@ def _v14_model_health(r1, r5):
     """Model-health gate. This is not a probability."""
     rows=[r for r in (r1,r5) if r]
     if len(rows)<2:
-        return "資料不足","至少需要明日與5日兩個模型都完成驗證"
+        return "這次先不要參考","至少需要明日與5日兩個模型都完成驗證"
     worst=max(float(r.get("brier",1)) for r in rows)
     statuses=[str(r.get("status","")) for r in rows]
     if worst>0.26 or "不足" in statuses:
@@ -1123,7 +1123,7 @@ def _v13_market_regime(price_df, inst_df=None):
         if score<=-2: return "偏空"
         return "震盪"
     except Exception:
-        return "資料不足"
+        return "這次先不要參考"
 
 def _v13_trade_plan(current, support, resistance, regime, r1, r5):
     """No fake probability; creates a transparent conditional plan."""
@@ -1173,7 +1173,7 @@ def daytrade_radar(close, prev, day_open, day_high, day_low, vol_ratio,
                    short_score, inst_score, support, resistance):
     """盤中當沖雷達：只做市場訊號，不假裝預知13:30收盤。"""
     if not prev or prev <= 0:
-        return "⚪ 觀望", 50, "資料不足", "盤整", support, resistance
+        return "⚪ 觀望", 50, "這次先不要參考", "盤整", support, resistance
 
     pct=(close/prev-1)*100
     open_pct=(close/day_open-1)*100 if day_open and day_open>0 else 0
@@ -1265,7 +1265,7 @@ def event_impact_for_stock(news_rows, sid, name):
     不把它偽裝成完整 NLP 或確定的事件方向。
     """
     if not news_rows:
-        return {"score":0, "risk":"資料不足", "related":0, "negative":0, "positive":0, "items":[]}
+        return {"score":0, "risk":"這次先不要參考", "related":0, "negative":0, "positive":0, "items":[]}
 
     high_kw = ["戰爭","開戰","攻擊","空襲","飛彈","制裁","關稅","出口管制","禁令",
                "Fed","聯準會","利率","美國總統","Trump","川普","台海","地震","停工"]
@@ -1389,7 +1389,7 @@ def lending_finmind(sid, token=""):
     return None
 
 def probability_gate(data_flags):
-    """資料不足時禁止顯示買賣機率。"""
+    """這次先不要參考時禁止顯示買賣機率。"""
     required=["價格","歷史行情","技術面","法人"]
     missing=[k for k in required if not data_flags.get(k,False)]
     completeness=sum(bool(v) for v in data_flags.values())/max(1,len(data_flags))
@@ -1909,7 +1909,7 @@ dt_score = int(max(0,min(100, dt_score + _v7_event["score"]*0.45)))
 _v7_up_prob = calibrated_probability_proxy(dt_score, _v7_event["score"], _v7_completeness)
 _v7_down_prob = round(100-_v7_up_prob,1)
 # V8.2：所有 UI 會用到的機率文字先初始化，避免先顯示後定義造成 NameError。
-_v8_day_up_txt="偏多" if (_v8_prob_ok and _v7_up_prob>=55) else ("偏空" if (_v8_prob_ok and _v7_up_prob<=45) else ("中性" if _v8_prob_ok else "資料不足"))
+_v8_day_up_txt="偏多" if (_v8_prob_ok and _v7_up_prob>=55) else ("偏空" if (_v8_prob_ok and _v7_up_prob<=45) else ("中性" if _v8_prob_ok else "這次先不要參考"))
 _v8_day_down_txt="模型傾向" if _v8_prob_ok else "—"
 _v9_session,_v9_session_label=v9_market_session()
 # 盤中機率只在盤中且成功取得盤中行情時顯示。
@@ -1933,7 +1933,7 @@ else:
 
 
 # 波段值在稍後正式計算；先給安全預設，避免任何前段 UI 引用失敗。
-_v8_swing_up_txt="資料不足"
+_v8_swing_up_txt="這次先不要參考"
 _v8_swing_down_txt="—"
 
 
@@ -1941,7 +1941,7 @@ _v8_swing_down_txt="—"
 _v7_swing_base = max(0,min(100, short*0.55 + mid*0.25 + inst_score*0.20))
 _v7_swing_up = calibrated_probability_proxy(_v7_swing_base, _v7_event["score"]*0.7, _v7_completeness)
 _v7_swing_down = round(100-_v7_swing_up,1)
-_v8_swing_up_txt="偏多" if (_v8_prob_ok and _v7_swing_up>=55) else ("偏空" if (_v8_prob_ok and _v7_swing_up<=45) else ("中性" if _v8_prob_ok else "資料不足"))
+_v8_swing_up_txt="偏多" if (_v8_prob_ok and _v7_swing_up>=55) else ("偏空" if (_v8_prob_ok and _v7_swing_up<=45) else ("中性" if _v8_prob_ok else "這次先不要參考"))
 _v8_swing_down_txt="模型傾向" if _v8_prob_ok else "—"
 
 
@@ -1968,7 +1968,7 @@ def _v9_strength_label(v):
         if v >= 30: return "偏空"
         return "強勢偏空"
     except Exception:
-        return "資料不足"
+        return "這次先不要參考"
 
 short_label=_v9_strength_label(short)
 
@@ -2181,7 +2181,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ===== V8 全市場資料引擎 =====
-_v8_status="可產生機率" if _v8_prob_ok else "資料不足・暫停機率判斷"
+_v8_status="可產生機率" if _v8_prob_ok else "這次先不要參考・暫停機率判斷"
 _v8_status_icon="🟢" if _v8_prob_ok else "⚠️"
 _pc_txt=(f"成交量 P/C {_v8_pc['vol_pc']:.2f}%｜未平倉 P/C {_v8_pc['oi_pc']:.2f}%" if _v8_pc else "尚未取得")
 _tx_txt=(f"外資臺指期未平倉淨額 {int(_v8_tx['net_oi']):,} 口" if _v8_tx else "尚未取得")
@@ -2251,9 +2251,9 @@ def _v176_horizon_signals(price_df, quote, p1=None, p5=None, inst_score=0):
     c=pd.to_numeric(df.get("close"),errors="coerce").dropna()
     if len(c)<25:
         return {
-            "short":("資料不足","等待更多歷史資料"),
-            "mid":("資料不足","等待更多歷史資料"),
-            "long":("資料不足","等待更多歷史資料")
+            "short":("這次先不要參考","等待更多歷史資料"),
+            "mid":("這次先不要參考","等待更多歷史資料"),
+            "long":("這次先不要參考","等待更多歷史資料")
         }
 
     last=float(c.iloc[-1])
@@ -2391,7 +2391,7 @@ for _col,_title,_key in zip(_v176_cols,["短線｜1–10交易日","中線｜2�
 # 5 / 20 / 60 交易日；Walk-forward OOS；缺資料不補假中性值
 # =========================================================
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=600, show_spinner=False)
 def _v181_fetch(dataset, sid, start_date, end_date, token=""):
     return fm(dataset, sid, start_date, end_date, token)
 
@@ -2551,7 +2551,7 @@ def _v181_walkforward(data,hz,kind="up"):
     5. 若校準後沒有優於 baseline，或 Brier 過差，就不把數字當作可信機率顯示
     """
     diag={
-        "status":"資料不足","reason":"","n":0,
+        "status":"這次先不要參考","reason":"","n":0,
         "brier":np.nan,"raw_brier":np.nan,"baseline_brier":np.nan,
         "skill":np.nan,"features":[],"raw_probability":None,
         "calibrated_probability":None
@@ -2655,11 +2655,11 @@ def _v181_walkforward(data,hz,kind="up"):
     elif acceptable_brier and beats_baseline:
         quality="可用"
     else:
-        quality="可信度不足"
+        quality="目前還不夠可靠"
 
     diag.update({
         "status":quality,
-        "reason":"V18.2 時序校準驗證完成",
+        "reason":"AI歷史測試完成",
         "n":len(y),
         "eval_n":len(eval_y),
         "brier":cal_brier,
@@ -2670,7 +2670,7 @@ def _v181_walkforward(data,hz,kind="up"):
         "calibrated_probability":calibrated
     })
 
-    if quality=="可信度不足":
+    if quality=="目前還不夠可靠":
         diag["reason"]=(
             f"模型未通過可信度門檻：校準Brier {cal_brier:.3f}｜"
             f"基準 {baseline_brier:.3f}｜Skill {skill*100:+.1f}%"
@@ -2680,7 +2680,7 @@ def _v181_walkforward(data,hz,kind="up"):
     return calibrated,diag
 
 def _v181_label(p):
-    if p is None: return "目前還不能可靠判斷"
+    if p is None: return "目前方向還看不清楚"
     if p>=.65: return "未來看漲"
     if p>=.55: return "比較有機會上漲"
     if p<=.35: return "未來看跌"
@@ -2688,7 +2688,7 @@ def _v181_label(p):
     return "方向還不明顯"
 
 def _v181_pct(p):
-    return "資料不足" if p is None else f"{p*100:.1f}%"
+    return "這次先不要參考" if p is None else f"{p*100:.1f}%"
 
 def _v181_latest_date(df):
     if df is None or df.empty: return "無資料"
@@ -2701,7 +2701,8 @@ def _v181_render(price_df,sid,token):
     st.markdown("## 🔭 AI 幫你看未來走勢")
     st.caption("分別看未來約 1 週、1 個月、3 個月。只有當 AI 過去的預測表現達到基本標準，才會顯示機率；不夠可靠時會直接提醒你。")
 
-    end=date.today()
+    # 每次分析都以台灣當天日期抓取最新可取得資料
+    end=datetime.now(ZoneInfo("Asia/Taipei")).date()
     start=end-timedelta(days=2200)
 
     inst5=_v181_fetch("TaiwanStockInstitutionalInvestorsBuySell",sid,start,end,token)
@@ -2728,9 +2729,10 @@ def _v181_render(price_df,sid,token):
         {"資料":"公司財報","狀態":"🟡 有資料，但這次先不使用" if (financial5 is not None and not financial5.empty and not fin_safe) else ("✅ 資料時間可確認" if fin_safe else "⚠️ 目前沒有資料"),"更新日期":_v181_latest_date(financial5),"說明":"無法確認當時何時公開，就先不用，避免 AI 誤用未來才知道的資料"},
     ]
     st.dataframe(pd.DataFrame(status_rows),use_container_width=True,hide_index=True)
+    st.caption("資料更新說明：每次分析會重新檢查最新可取得資料；資料來源若尚未公布當日資料，會顯示該來源實際最新日期。資料快取最長約 10 分鐘。")
     st.info(
-        "V18.2 可信度規則：未來機率必須在時間序列樣本外驗證中優於「只猜歷史發生率」的基準模型，"
-        "並通過 Brier 門檻才會顯示。未通過時直接標示資料／模型可信度不足，不以 94%～100% 的極端數字誤導。"
+        "AI預測怎麼看？：未來機率必須在時間序列樣本外驗證中優於「只猜歷史發生率」的基準模型，"
+        "並通過 Brier 門檻才會顯示。未通過時直接標示資料／模型目前還不夠可靠，不以 94%～100% 的極端數字誤導。"
     )
 
     R={}
@@ -2760,8 +2762,8 @@ def _v181_render(price_df,sid,token):
                 skill_txt = "無法計算" if not np.isfinite(du.get("skill",np.nan)) else f"{du['skill']*100:+.1f}%"
                 st.write(f"歷史測試筆數：{du.get('n',0)}")
                 st.write(f"獨立檢查筆數：{du.get('eval_n',0)}")
-                st.write(f"AI 誤差值（越低越好）：{du.get('brier',np.nan):.3f}" if np.isfinite(du.get('brier',np.nan)) else "AI 誤差值：資料不足")
-                st.write(f"基本比較值：{du.get('baseline_brier',np.nan):.3f}" if np.isfinite(du.get('baseline_brier',np.nan)) else "基本比較值：資料不足")
+                st.write(f"AI 誤差值（越低越好）：{du.get('brier',np.nan):.3f}" if np.isfinite(du.get('brier',np.nan)) else "AI 誤差值：這次先不要參考")
+                st.write(f"基本比較值：{du.get('baseline_brier',np.nan):.3f}" if np.isfinite(du.get('baseline_brier',np.nan)) else "基本比較值：這次先不要參考")
                 st.write(f"比基本方法進步：{skill_txt}")
 
     # 持有與加碼分離
@@ -4019,17 +4021,17 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
     """條件式市場訊號，不代表獲利保證。"""
     if price_df is None or len(price_df) < 25:
         return {
-            "long":("觀望","資料不足"),
-            "short":("暫不放空","資料不足"),
-            "day":("等待","盤中資料不足"),
+            "long":("觀望","這次先不要參考"),
+            "short":("暫不放空","這次先不要參考"),
+            "day":("等待","盤中這次先不要參考"),
             "day_condition":"等待更多即時資料",
             "day_invalid":"—"
         }
 
     close = pd.to_numeric(price_df["close"], errors="coerce").dropna()
     if len(close) < 25:
-        return {"long":("觀望","資料不足"),"short":("暫不放空","資料不足"),
-                "day":("等待","盤中資料不足"),"day_condition":"等待更多資料","day_invalid":"—"}
+        return {"long":("觀望","這次先不要參考"),"short":("暫不放空","這次先不要參考"),
+                "day":("等待","盤中這次先不要參考"),"day_condition":"等待更多資料","day_invalid":"—"}
 
     c=float(close.iloc[-1])
     ma5=float(close.tail(5).mean())
@@ -4118,7 +4120,7 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
 
     required={"現價":lp,"開盤":op,"最高":hi,"最低":lo,"昨收":prev}
     missing=[k for k,v in required.items() if v is None]
-    day_sig="資料不足" if missing else "等待"
+    day_sig="這次先不要參考" if missing else "等待"
     day_reason=("缺少："+"、".join(missing)) if missing else "即時條件準備完成"
     cond="等待即時行情欄位完整" if missing else "等待價格方向確認"
     invalid="—"
