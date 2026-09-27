@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V22.1"
+APP_VERSION = "V22.2"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -627,6 +627,15 @@ border-radius:10px;padding:9px 12px;margin:8px 0;color:#e8d9b5;font-size:12px}
 [data-testid="stAlert"] p{color:#F1F6FB !important;font-weight:650 !important;}
 [data-testid="stMetricLabel"] p{color:#DCE7F2 !important;font-weight:750 !important;}
 details,details p,details span{color:#D9E5F0 !important;}
+/* ===== V22.2 未來判斷專業深色版 ===== */
+.future-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin:10px 0 8px}
+.future-day{background:#071522;border:1px solid #29445D;border-radius:12px;padding:11px 12px;min-height:88px}
+.future-day.up{border-top:3px solid #FF5B61}.future-day.down{border-top:3px solid #49D17D}.future-day.wait{border-top:3px solid #F0C85A}
+.future-daynum{font-size:12px;color:#D5E2ED;font-weight:800}.future-daynum span{float:right;color:#8EA7BE;font-size:10px}
+.future-dir{font-size:18px;color:#FFF;font-weight:950;margin-top:8px}.future-prob{font-size:14px;color:#F2D56B;font-weight:850;margin-top:3px}
+div[data-testid="stMetric"]{background:#071522;border:1px solid #29445D;border-radius:12px;padding:12px 14px}
+div[data-testid="stMetric"] label{color:#CFE0ED!important}div[data-testid="stMetricValue"]{color:#FFF!important}
+@media(max-width:850px){.future-grid{grid-template-columns:repeat(2,1fr)}} 
 </style>
 """, unsafe_allow_html=True)
 
@@ -2703,8 +2712,8 @@ def _v20_structure_trend(data, horizon):
         return "資料不足"
 
 def _v181_render(price_df,sid,token):
-    st.markdown("## 🔭 AI 看未來｜攻擊型判斷")
-    st.caption("不繞圈子：先看未來10個交易日，再看1個月、3個月、1年、2年。模型有把握才顯示機率，沒把握就直接說先不出手。")
+    st.markdown("## 🔭 AI 未來方向")
+    st.caption("先看方向，再看機率。紅＝偏多、綠＝偏空、金＝等待。")
 
     end=pd.Timestamp.now(tz="Asia/Taipei").date()
     short_start=end-timedelta(days=1825)
@@ -2719,7 +2728,7 @@ def _v181_render(price_df,sid,token):
     latest_inst=_v181_latest_date(inst5)
     latest_margin=_v181_latest_date(margin5)
     latest_rev=_v181_latest_date(revenue5)
-    st.success(f"資料已取得｜股價：{latest_price}｜法人：{latest_inst}｜融資融券：{latest_margin}｜月營收：{latest_rev}")
+    st.caption(f"資料日期｜股價 {latest_price}・法人 {latest_inst}・融資融券 {latest_margin}・月營收 {latest_rev}")
 
     R={}
     # 10日採少量關鍵節點模型，避免為10天各重訓一次造成頁面卡頓。
@@ -2742,21 +2751,25 @@ def _v181_render(price_df,sid,token):
         p=anchors[lo]+(anchors[hi]-anchors[lo])*(day-lo)/(hi-lo)
         return float(p),True
 
-    st.markdown("### 📅 未來 10 個交易日")
+    st.markdown("### 📅 未來 10 個交易日｜一眼看方向")
     rows=[]
-    for d in range(1,11):
-        p,estimated=_interp_prob(d)
+    for day in range(1,11):
+        p,estimated=_interp_prob(day)
         if p is None:
-            direction="暫不判斷"; prob="—"
+            direction="先等等"; prob="—"; cls="wait"
         elif p>=.53:
-            direction="偏多進攻 ↑"; prob=f"{p*100:.1f}%"
+            direction="偏多 ↑"; prob=f"{p*100:.1f}%"; cls="up"
         elif p<=.47:
-            direction="偏空防守 ↓"; prob=f"{p*100:.1f}%"
+            direction="偏空 ↓"; prob=f"{p*100:.1f}%"; cls="down"
         else:
-            direction="多空拉鋸 ↔"; prob=f"{p*100:.1f}%"
-        rows.append({"交易日":f"第 {d} 天","方向":direction,"上漲機會":prob,"類型":"AI驗證" if not estimated else "區間推估"})
-    st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
-    st.caption("第1、3、5、10天使用各自歷史驗證模型；其餘天數是相鄰模型的區間推估，不把推估冒充獨立模型機率。")
+            direction="震盪 ↔"; prob=f"{p*100:.1f}%"; cls="wait"
+        rows.append((day,direction,prob,estimated,cls))
+    _cards=""
+    for day,direction,prob,estimated,cls in rows:
+        _tag="推估" if estimated else "AI"
+        _cards += f'<div class="future-day {cls}"><div class="future-daynum">第{day}天 <span>{_tag}</span></div><div class="future-dir">{direction}</div><div class="future-prob">{prob}</div></div>'
+    st.markdown(f'<div class="future-grid">{_cards}</div>',unsafe_allow_html=True)
+    st.caption("重點看方向即可。第1、3、5、10天是獨立AI驗證；其他天是區間趨勢推估。")
 
     trend_1y=_v20_structure_trend(data,250)
     trend_2y=_v20_structure_trend(data,500)
