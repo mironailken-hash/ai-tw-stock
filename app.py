@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V21.1"
+APP_VERSION = "V21.1.1"
 APP_RELEASE_TIME = "2026/09/27 15:45:00"
 from urllib.parse import quote
 
@@ -2457,7 +2457,7 @@ def _v181_build_dataset(price_df, inst_df, margin_df, revenue_df):
             x=pd.merge_asof(x.sort_values("date"),extra,on="date",direction="backward")
 
     # 未來標籤
-    for hz in (5,20,60,250,500):
+    for hz in (1,3,5,10,20,60,250,500):
         fwd=c.shift(-hz)/c-1
         x[f"target_up_{hz}"]=(fwd>0).where(fwd.notna())
         if hz <= 60:
