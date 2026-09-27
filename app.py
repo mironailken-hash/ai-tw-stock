@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V21.0"
+APP_VERSION = "V21.1"
 APP_RELEASE_TIME = "2026/09/27 15:45:00"
 from urllib.parse import quote
 
@@ -2692,41 +2692,62 @@ def _v20_structure_trend(data, horizon):
 
 def _v181_render(price_df,sid,token):
     st.markdown("## 🔭 AI 看未來")
-    st.caption("短中期看 AI 歷史測試；1年、2年看長期結構。主頁只留方向、買點與風險。")
+    st.caption("未來10個交易日逐日判斷＋1個月、3個月 AI 趨勢＋1年、2年長期結構。")
 
     end=pd.Timestamp.now(tz="Asia/Taipei").date()
-    # 法人／融資只抓近 5 年，避免每次載入 12 年逐日資料。
     short_start=end-timedelta(days=1825)
-    # 月營收抓較長期間，供長期結構判斷。
     long_start=end-timedelta(days=4380)
 
     inst5=_v181_fetch("TaiwanStockInstitutionalInvestorsBuySell",sid,short_start,end,token)
     margin5=_v181_fetch("TaiwanStockMarginPurchaseShortSale",sid,short_start,end,token)
     revenue5=_v181_fetch("TaiwanStockMonthRevenue",sid,long_start,end,token)
-
     data=_v181_build_dataset(price_df,inst5,margin5,revenue5)
-    feats,groups=_v181_available_features(data)
 
     latest_price=_v181_latest_date(price_df)
     latest_inst=_v181_latest_date(inst5)
     latest_margin=_v181_latest_date(margin5)
     latest_rev=_v181_latest_date(revenue5)
+    st.success(f"資料已取得｜股價：{latest_price}｜法人：{latest_inst}｜融資融券：{latest_margin}｜月營收：{latest_rev}")
 
-    st.success(
-        f"資料已取得｜股價最新：{latest_price}｜法人：{latest_inst}｜"
-        f"融資融券：{latest_margin}｜月營收：{latest_rev}"
-    )
-
-    # 只訓練兩個真正需要機率的模型，大幅減少等待時間。
     R={}
-    with st.spinner("AI 正在整理 1個月、3個月趨勢…"):
-        for hz in (20,60):
+    # 10日採少量關鍵節點模型，避免為10天各重訓一次造成頁面卡頓。
+    # 1/3/5/10日各自做歷史驗證；中間日期以相鄰已驗證節點平滑推估，並明確標示為推估。
+    with st.spinner("AI 正在計算未來10個交易日與中期趨勢…"):
+        for hz in (1,3,5,10,20,60):
             R[hz]={"up":_v181_walkforward(data,hz,"up")}
 
-    # 1年、2年：使用長期價格/營收結構，不硬做遠期機率。
+    def _interp_prob(day):
+        anchors={d:R[d]["up"][0] for d in (1,3,5,10)}
+        if day in anchors:
+            return anchors[day],False
+        pts=[d for d in (1,3,5,10) if anchors[d] is not None]
+        if not pts:
+            return None,True
+        lo=max([d for d in pts if d<day],default=None)
+        hi=min([d for d in pts if d>day],default=None)
+        if lo is None: return anchors[hi],True
+        if hi is None: return anchors[lo],True
+        p=anchors[lo]+(anchors[hi]-anchors[lo])*(day-lo)/(hi-lo)
+        return float(p),True
+
+    st.markdown("### 📅 未來 10 個交易日")
+    rows=[]
+    for d in range(1,11):
+        p,estimated=_interp_prob(d)
+        if p is None:
+            direction="暫不判斷"; prob="—"
+        elif p>=.56:
+            direction="偏多 ↑"; prob=f"{p*100:.1f}%"
+        elif p<=.44:
+            direction="偏空 ↓"; prob=f"{p*100:.1f}%"
+        else:
+            direction="震盪 ↔"; prob=f"{p*100:.1f}%"
+        rows.append({"交易日":f"第 {d} 天","方向":direction,"上漲機會":prob,"類型":"AI驗證" if not estimated else "區間推估"})
+    st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
+    st.caption("第1、3、5、10天使用各自歷史驗證模型；其餘天數是相鄰模型的區間推估，不把推估冒充獨立模型機率。")
+
     trend_1y=_v20_structure_trend(data,250)
     trend_2y=_v20_structure_trend(data,500)
-
     cols=st.columns(4)
     for col,hz,title in zip(cols,(20,60),("未來約 1 個月","未來約 3 個月")):
         up,du=R[hz]["up"]
@@ -2735,81 +2756,48 @@ def _v181_render(price_df,sid,token):
             if up is None:
                 st.markdown("**方向暫不明確**")
                 st.metric("AI上漲機會","暫不顯示")
-                st.caption("資料有抓到，但AI過去測試沒有通過可靠度標準。")
+                st.caption("資料有取得，但歷史驗證未通過可靠度門檻。")
             else:
                 st.markdown(f"**{_v181_label(up)}**")
                 st.metric("上漲機會",f"{up*100:.1f}%")
-                confidence="較高" if du.get("status")=="良好" else "普通"
-                st.caption(f"可信程度：{confidence}")
+                st.caption("可信程度："+("較高" if du.get("status")=="良好" else "普通"))
 
     with cols[2]:
         st.markdown("### 未來約 1 年")
         st.markdown(f"**{trend_1y}**")
         st.metric("判斷方式","長期趨勢")
-        st.caption("看約1年的價格趨勢、均線與營收方向。")
-
+        st.caption("價格結構、長期均線與營收方向。")
     with cols[3]:
         st.markdown("### 未來約 2 年")
         st.markdown(f"**{trend_2y}**")
         st.metric("判斷方式","長期趨勢")
-        st.caption("2年太遠，不硬算假精準機率；改看長期結構。")
+        st.caption("長期結構判斷，不硬做假精準機率。")
 
-    p20=R[20]["up"][0]
-    p60=R[60]["up"][0]
-
+    p10=R[10]["up"][0]; p20=R[20]["up"][0]; p60=R[60]["up"][0]
     close_s=pd.to_numeric(price_df["close"],errors="coerce").dropna()
     if len(close_s)>=240:
-        last=float(close_s.iloc[-1])
-        ma20=float(close_s.tail(20).mean())
-        ma60=float(close_s.tail(60).mean())
-        ma240=float(close_s.tail(240).mean())
+        last=float(close_s.iloc[-1]); ma20=float(close_s.tail(20).mean()); ma60=float(close_s.tail(60).mean()); ma240=float(close_s.tail(240).mean())
         bias20=last/ma20-1
-
+        short_bull=p10 is not None and p10>=.52
         medium_bull=(p20 is not None and p20>=.52) or (p60 is not None and p60>=.52)
-        structural_bull=(last>ma240 and trend_1y in ("長期偏多","略偏多"))
-
-        if medium_bull or structural_bull:
-            hold="整體仍偏多，可續抱觀察"
-        elif p20 is not None and p20<.48:
-            hold="短中期轉弱，要提高警覺"
+        structural_bull=last>ma240 and trend_1y in ("長期偏多","略偏多")
+        hold="整體仍偏多，可續抱觀察" if (medium_bull or structural_bull) else ("短中期轉弱，要提高警覺" if p20 is not None and p20<.48 else "目前沒有明顯轉空，可繼續觀察")
+        if short_bull or medium_bull or structural_bull:
+            add="方向偏多，但短線漲太快；等拉回再找機會" if bias20>.12 else ("仍偏多，可等小幅拉回" if bias20>.06 else "偏多，可留意分批布局")
         else:
-            hold="目前沒有明顯轉空，可繼續觀察"
-
-        if medium_bull or structural_bull:
-            if bias20>.12:
-                add="方向偏多，但短線漲太快；等拉回再買比較好"
-            elif bias20>.06:
-                add="仍偏多，可等小幅拉回再找機會"
-            else:
-                add="偏多，可留意分批布局"
-        elif p20 is not None and p20<.48:
-            add="目前先不要加碼"
-        else:
-            add="可以觀察，小量分批比一次重押好"
-
-        if bias20>.15:
-            risk="短線過熱，拉回風險升高"
-        elif last<ma60:
-            risk="已跌到中期趨勢下方，要注意轉弱"
-        else:
-            risk="目前沒有明顯轉空訊號"
-
+            add="目前先不要加碼" if p20 is not None and p20<.48 else "先觀察，等待方向更明確"
+        risk="短線過熱，拉回風險升高" if bias20>.15 else ("已跌到中期趨勢下方，要注意轉弱" if last<ma60 else "目前沒有明顯轉空訊號")
         st.markdown("### 🎯 直接看結論")
-        a,b,c=st.columns(3)
-        a.info(f"**手上有股票**\n\n{hold}")
-        b.info(f"**想繼續買**\n\n{add}")
-        c.warning(f"**現在風險**\n\n{risk}")
+        a,b,c=st.columns(3); a.info(f"**手上有股票**\n\n{hold}"); b.info(f"**想繼續買**\n\n{add}"); c.warning(f"**現在風險**\n\n{risk}")
 
     with st.expander("查看 AI 使用資料與最新日期"):
-        status_rows=[
+        st.dataframe(pd.DataFrame([
             {"資料":"股價與成交量","最新日期":latest_price},
             {"資料":"外資／投信／自營商","最新日期":latest_inst},
             {"資料":"融資／融券","最新日期":latest_margin},
             {"資料":"公司月營收","最新日期":latest_rev},
-        ]
-        st.dataframe(pd.DataFrame(status_rows),use_container_width=True,hide_index=True)
-        st.caption("顯示的是各資料來源實際最新公布日；遇到週末或休市日，不會硬改成今天日期。")
-
+        ]),use_container_width=True,hide_index=True)
+        st.caption("顯示各來源實際最新公布日；休市日不會硬改成今天。")
     return R
 
 _v181_results=_v181_render(price,sid,token)
