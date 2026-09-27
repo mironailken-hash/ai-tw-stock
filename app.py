@@ -2877,7 +2877,12 @@ st.markdown("""
   <div class="section-pro-sub">顯示約 2 年走勢，方便對照長期方向</div>
 </div>
 """, unsafe_allow_html=True)
-chart_df = d.tail(520).copy()
+# 圖表直接使用 price 建立自己的均線，不依賴前面任何暫存變數，
+# 避免研究面板使用 a/b/c/d 欄位變數時意外覆蓋技術指標 DataFrame。
+chart_df = price.tail(520).copy()
+chart_df["close"] = pd.to_numeric(chart_df["close"], errors="coerce")
+chart_df["MA20"] = chart_df["close"].rolling(20).mean()
+chart_df["MA60"] = chart_df["close"].rolling(60).mean()
 fig = go.Figure()
 line_defs = [
     ("close", "收盤價", "#F2C94C", 3.0),
