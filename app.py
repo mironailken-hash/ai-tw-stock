@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V21.1.1"
+APP_VERSION = "V21.2"
 APP_RELEASE_TIME = "2026/09/27 15:45:00"
 from urllib.parse import quote
 
@@ -616,6 +616,13 @@ border-radius:16px;padding:16px 18px;margin:8px 0 13px}
 .v92-stale{background:rgba(255,184,77,.08);border:1px solid rgba(255,184,77,.35);
 border-radius:10px;padding:9px 12px;margin:8px 0;color:#e8d9b5;font-size:12px}
 
+/* ===== V21.2 可讀性校正 ===== */
+.small,.kicker,.action-sub,.decision-note,.v6-meta,.v7-beta,.v9-prob-rule,
+[data-testid="stCaptionContainer"],[data-testid="stCaptionContainer"] p,
+.stCaption,small{color:#D7E3EF !important;font-size:13px !important;line-height:1.65 !important;}
+[data-testid="stAlert"] p{color:#F1F6FB !important;font-weight:650 !important;}
+[data-testid="stMetricLabel"] p{color:#DCE7F2 !important;font-weight:750 !important;}
+details,details p,details span{color:#D9E5F0 !important;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2640,12 +2647,13 @@ def _v181_walkforward(data,hz,kind="up"):
     return calibrated,diag
 
 def _v181_label(p):
-    if p is None: return "AI機率暫不採用"
-    if p>=.60: return "看漲"
-    if p>=.52: return "偏多"
-    if p<=.40: return "看跌"
-    if p<=.48: return "偏空"
-    return "震盪"
+    """V21.2 攻擊型訊號：可靠度門檻不放寬，只讓通過驗證後的方向更積極。"""
+    if p is None: return "先不出手"
+    if p>=.62: return "強勢偏多"
+    if p>=.51: return "偏多進攻"
+    if p<=.38: return "強勢偏空"
+    if p<=.49: return "偏空防守"
+    return "多空拉鋸"
 
 def _v181_pct(p):
     return "這次先不要參考" if p is None else f"{p*100:.1f}%"
@@ -2682,17 +2690,17 @@ def _v20_structure_trend(data, horizon):
                 v=pd.to_numeric(pd.Series([r.get(k,np.nan)]),errors="coerce").iloc[0]
                 if pd.notna(v):
                     score += 1 if v>0 else -1
-        if score>=4: return "長期偏多"
-        if score>=1: return "略偏多"
-        if score<=-4: return "長期偏空"
-        if score<=-1: return "略偏空"
-        return "長期震盪"
+        if score>=4: return "長線多方佔上風"
+        if score>=1: return "長線偏多"
+        if score<=-4: return "長線空方佔上風"
+        if score<=-1: return "長線偏弱"
+        return "長線多空拉鋸"
     except Exception:
         return "資料不足"
 
 def _v181_render(price_df,sid,token):
-    st.markdown("## 🔭 AI 看未來")
-    st.caption("未來10個交易日逐日判斷＋1個月、3個月 AI 趨勢＋1年、2年長期結構。")
+    st.markdown("## 🔭 AI 看未來｜攻擊型判斷")
+    st.caption("不繞圈子：先看未來10個交易日，再看1個月、3個月、1年、2年。模型有把握才顯示機率，沒把握就直接說先不出手。")
 
     end=pd.Timestamp.now(tz="Asia/Taipei").date()
     short_start=end-timedelta(days=1825)
@@ -2736,12 +2744,12 @@ def _v181_render(price_df,sid,token):
         p,estimated=_interp_prob(d)
         if p is None:
             direction="暫不判斷"; prob="—"
-        elif p>=.56:
-            direction="偏多 ↑"; prob=f"{p*100:.1f}%"
-        elif p<=.44:
-            direction="偏空 ↓"; prob=f"{p*100:.1f}%"
+        elif p>=.53:
+            direction="偏多進攻 ↑"; prob=f"{p*100:.1f}%"
+        elif p<=.47:
+            direction="偏空防守 ↓"; prob=f"{p*100:.1f}%"
         else:
-            direction="震盪 ↔"; prob=f"{p*100:.1f}%"
+            direction="多空拉鋸 ↔"; prob=f"{p*100:.1f}%"
         rows.append({"交易日":f"第 {d} 天","方向":direction,"上漲機會":prob,"類型":"AI驗證" if not estimated else "區間推估"})
     st.dataframe(pd.DataFrame(rows),use_container_width=True,hide_index=True)
     st.caption("第1、3、5、10天使用各自歷史驗證模型；其餘天數是相鄰模型的區間推估，不把推估冒充獨立模型機率。")
@@ -2778,16 +2786,16 @@ def _v181_render(price_df,sid,token):
     if len(close_s)>=240:
         last=float(close_s.iloc[-1]); ma20=float(close_s.tail(20).mean()); ma60=float(close_s.tail(60).mean()); ma240=float(close_s.tail(240).mean())
         bias20=last/ma20-1
-        short_bull=p10 is not None and p10>=.52
-        medium_bull=(p20 is not None and p20>=.52) or (p60 is not None and p60>=.52)
-        structural_bull=last>ma240 and trend_1y in ("長期偏多","略偏多")
-        hold="整體仍偏多，可續抱觀察" if (medium_bull or structural_bull) else ("短中期轉弱，要提高警覺" if p20 is not None and p20<.48 else "目前沒有明顯轉空，可繼續觀察")
+        short_bull=p10 is not None and p10>=.51
+        medium_bull=(p20 is not None and p20>=.51) or (p60 is not None and p60>=.51)
+        structural_bull=last>ma240 and trend_1y in ("長線多方佔上風","長線偏多")
+        hold="多方還在，手上有單可續抱，但盯緊轉弱訊號" if (medium_bull or structural_bull) else ("短中期轉弱，要提高警覺" if p20 is not None and p20<.48 else "目前沒有明顯轉空，可繼續觀察")
         if short_bull or medium_bull or structural_bull:
-            add="方向偏多，但短線漲太快；等拉回再找機會" if bias20>.12 else ("仍偏多，可等小幅拉回" if bias20>.06 else "偏多，可留意分批布局")
+            add="多方強，但追高風險大；等拉回承接再進攻" if bias20>.12 else ("仍偏多，可等小幅拉回" if bias20>.06 else "偏多，可留意分批布局")
         else:
-            add="目前先不要加碼" if p20 is not None and p20<.48 else "先觀察，等待方向更明確"
-        risk="短線過熱，拉回風險升高" if bias20>.15 else ("已跌到中期趨勢下方，要注意轉弱" if last<ma60 else "目前沒有明顯轉空訊號")
-        st.markdown("### 🎯 直接看結論")
+            add="現在不是加碼點，等訊號翻多再動" if p20 is not None and p20<.48 else "先觀察，等待方向更明確"
+        risk="短線太熱，最怕急拉後甩尾，追價要小心" if bias20>.15 else ("已跌到中期趨勢下方，要注意轉弱" if last<ma60 else "目前沒有明顯轉空訊號")
+        st.markdown("### 🎯 直接講重點")
         a,b,c=st.columns(3); a.info(f"**手上有股票**\n\n{hold}"); b.info(f"**想繼續買**\n\n{add}"); c.warning(f"**現在風險**\n\n{risk}")
 
     with st.expander("查看 AI 使用資料與最新日期"):
