@@ -25,7 +25,11 @@ from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
 APP_VERSION = "V22.0"
-# 自動顯示目前部署程式的檔案更新時間（台灣時間）；之後更新 app.py 不必手動改時間。\ntry:\n    APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")\nexcept Exception:\n    APP_RELEASE_TIME = pd.Timestamp.now(tz="Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
+# 自動顯示部署程式檔案的更新時間（台灣時間）
+try:
+    APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
+except Exception:
+    APP_RELEASE_TIME = pd.Timestamp.now(tz="Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
