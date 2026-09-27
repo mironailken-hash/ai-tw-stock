@@ -23,8 +23,8 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V17.8-NO-MEMBER"
-APP_RELEASE_TIME = "2026/09/25 14:25:00"
+APP_VERSION = "V18.1"
+APP_RELEASE_TIME = "2026/09/27 13:44:58"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -2382,6 +2382,322 @@ for _col,_title,_key in zip(_v176_cols,["短線｜1–10交易日","中線｜2�
 # V17.6.5：舊版 V15.3 統一決策中心已移除。
 # 現在由上方 V17.x ACTION CENTER、多空當沖、AI 綜合判斷與多週期趨勢燈號統一呈現。
 # 保留後續關鍵價位與其他分析模組。
+
+
+# =========================================================
+# V18.1｜多因子未來趨勢引擎
+# 價量 + 法人 + 融資融券 + 月營收（僅在日期可安全對齊時納入）
+# 5 / 20 / 60 交易日；Walk-forward OOS；缺資料不補假中性值
+# =========================================================
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _v181_fetch(dataset, sid, start_date, end_date, token=""):
+    return fm(dataset, sid, start_date, end_date, token)
+
+def _v181_num(s):
+    return pd.to_numeric(s, errors="coerce")
+
+def _v181_date_col(df):
+    if df is None or df.empty:
+        return None
+    # 優先真正的公開/發布日期；避免用財報所屬期間偷看未來
+    for c in ["release_date","announcement_date","publish_date","date"]:
+        if c in df.columns:
+            return c
+    return None
+
+def _v181_daily_institution(inst):
+    """法人資料轉成每日淨買賣；欄位不存在就回空資料。"""
+    if inst is None or inst.empty or "date" not in inst.columns:
+        return pd.DataFrame()
+    z=inst.copy()
+    z["date"]=pd.to_datetime(z["date"],errors="coerce")
+    buy=[c for c in z.columns if "buy" in c.lower()]
+    sell=[c for c in z.columns if "sell" in c.lower()]
+    if not buy or not sell:
+        return pd.DataFrame()
+    z["_buy"]=z[buy].apply(pd.to_numeric,errors="coerce").fillna(0).sum(axis=1)
+    z["_sell"]=z[sell].apply(pd.to_numeric,errors="coerce").fillna(0).sum(axis=1)
+    g=z.groupby("date",as_index=False).agg(inst_net=("_buy","sum"),inst_sell=("_sell","sum"))
+    g["inst_net_5"]=g["inst_net"].rolling(5).sum()
+    g["inst_net_20"]=g["inst_net"].rolling(20).sum()
+    # 用絕對交易量縮放，避免不同股票量級不可比
+    den=(g["inst_net"].abs()+g["inst_sell"].abs()).rolling(20).mean().replace(0,np.nan)
+    g["inst_strength_20"]=g["inst_net_20"]/den
+    return g[["date","inst_net_5","inst_net_20","inst_strength_20"]]
+
+def _v181_daily_margin(margin):
+    """融資融券資料：採可辨識的餘額欄位，計算變化率。"""
+    if margin is None or margin.empty or "date" not in margin.columns:
+        return pd.DataFrame()
+    z=margin.copy()
+    z["date"]=pd.to_datetime(z["date"],errors="coerce")
+    # FinMind 不同版本欄位名稱可能不同，因此採關鍵字辨識
+    mcols=[c for c in z.columns if ("margin" in c.lower() and "balance" in c.lower())]
+    scols=[c for c in z.columns if (("short" in c.lower() or "shortsale" in c.lower()) and "balance" in c.lower())]
+    out=z[["date"]].copy()
+    if mcols:
+        m=_v181_num(z[mcols[0]])
+        out["margin_chg_5"]=m.pct_change(5)
+        out["margin_chg_20"]=m.pct_change(20)
+    if scols:
+        sh=_v181_num(z[scols[0]])
+        out["short_chg_5"]=sh.pct_change(5)
+        out["short_chg_20"]=sh.pct_change(20)
+    return out.drop_duplicates("date",keep="last")
+
+def _v181_revenue_features(rev):
+    """
+    月營收。
+    只有能找到日期欄位與 revenue 欄位才建立特徵；
+    以 merge_asof 向後對齊，不把未來月份回填到過去。
+    """
+    if rev is None or rev.empty:
+        return pd.DataFrame()
+    dc=_v181_date_col(rev)
+    if dc is None:
+        return pd.DataFrame()
+    rcol=None
+    for c in ["revenue","Revenue","monthly_revenue"]:
+        if c in rev.columns:
+            rcol=c; break
+    if rcol is None:
+        return pd.DataFrame()
+    z=rev.copy()
+    z["date"]=pd.to_datetime(z[dc],errors="coerce")
+    z["revenue"]=_v181_num(z[rcol])
+    z=z.dropna(subset=["date","revenue"]).sort_values("date")
+    if len(z)<14:
+        return pd.DataFrame()
+    z["revenue_mom"]=z["revenue"].pct_change(1)
+    z["revenue_yoy"]=z["revenue"].pct_change(12)
+    z["revenue_yoy_accel"]=z["revenue_yoy"]-z["revenue_yoy"].shift(3)
+    return z[["date","revenue_mom","revenue_yoy","revenue_yoy_accel"]].drop_duplicates("date",keep="last")
+
+def _v181_build_dataset(price_df, inst_df, margin_df, revenue_df):
+    x=price_df.copy().sort_values("date").reset_index(drop=True)
+    x["date"]=pd.to_datetime(x["date"],errors="coerce")
+    c=_v181_num(x["close"])
+    h=_v181_num(x["max"]) if "max" in x else c
+    l=_v181_num(x["min"]) if "min" in x else c
+    vc="Trading_Volume" if "Trading_Volume" in x else ("volume" if "volume" in x else None)
+    v=_v181_num(x[vc]) if vc else pd.Series(np.nan,index=x.index)
+    ret=c.pct_change()
+
+    for n in (1,5,10,20,60,120):
+        x[f"ret_{n}"]=c.pct_change(n)
+    for n in (5,10,20,60,120):
+        x[f"ma_bias_{n}"]=c/c.rolling(n).mean()-1
+
+    x["volatility_20"]=ret.rolling(20).std()
+    x["volatility_60"]=ret.rolling(60).std()
+    x["range_20"]=((h-l)/c.replace(0,np.nan)).rolling(20).mean()
+    x["volume_ratio_20"]=v/v.rolling(20).mean()
+    x["volume_ratio_60"]=v/v.rolling(60).mean()
+    x["trend_slope_20"]=(c-c.shift(20))/(20*c.replace(0,np.nan))
+    x["trend_slope_60"]=(c-c.shift(60))/(60*c.replace(0,np.nan))
+
+    # 只做向後 as-of 合併：某交易日只能看到當時已存在的資料
+    for extra in (_v181_daily_institution(inst_df),
+                  _v181_daily_margin(margin_df),
+                  _v181_revenue_features(revenue_df)):
+        if extra is not None and not extra.empty:
+            extra=extra.sort_values("date")
+            x=pd.merge_asof(x.sort_values("date"),extra,on="date",direction="backward")
+
+    # 未來標籤
+    for hz in (5,20,60):
+        fwd=c.shift(-hz)/c-1
+        x[f"target_up_{hz}"]=(fwd>0).where(fwd.notna())
+        x[f"target_plus5_{hz}"]=(fwd>.05).where(fwd.notna())
+        future_min=pd.concat([c.shift(-k) for k in range(1,hz+1)],axis=1).min(axis=1)
+        x[f"target_dd8_{hz}"]=((future_min/c-1)<=-.08).where(c.shift(-hz).notna())
+    return x
+
+_V181_PRICE_FEATURES=[
+    "ret_1","ret_5","ret_10","ret_20","ret_60","ret_120",
+    "ma_bias_5","ma_bias_10","ma_bias_20","ma_bias_60","ma_bias_120",
+    "volatility_20","volatility_60","range_20",
+    "volume_ratio_20","volume_ratio_60","trend_slope_20","trend_slope_60"
+]
+_V181_OPTIONAL_FEATURES=[
+    "inst_net_5","inst_net_20","inst_strength_20",
+    "margin_chg_5","margin_chg_20","short_chg_5","short_chg_20",
+    "revenue_mom","revenue_yoy","revenue_yoy_accel"
+]
+
+def _v181_available_features(data):
+    feats=list(_V181_PRICE_FEATURES)
+    used_groups={"價量":True,"法人":False,"融資融券":False,"月營收":False}
+    for c in _V181_OPTIONAL_FEATURES:
+        if c in data.columns and data[c].notna().sum()>=120:
+            feats.append(c)
+            if c.startswith("inst_"): used_groups["法人"]=True
+            elif c.startswith("margin_") or c.startswith("short_"): used_groups["融資融券"]=True
+            elif c.startswith("revenue_"): used_groups["月營收"]=True
+    return feats,used_groups
+
+def _v181_walkforward(data,hz,kind="up"):
+    diag={"status":"資料不足","reason":"","n":0,"brier":np.nan,"features":[]}
+    if not SKLEARN_OK:
+        diag["reason"]="scikit-learn 未載入"
+        return None,diag
+    target={"up":f"target_up_{hz}","plus5":f"target_plus5_{hz}","dd8":f"target_dd8_{hz}"}[kind]
+    feats,groups=_v181_available_features(data)
+    diag["features"]=feats
+    diag["groups"]=groups
+    train=data.iloc[:-hz].dropna(subset=_V181_PRICE_FEATURES+[target]).copy()
+
+    # Optional features are never imputed with fake neutral values.
+    # A feature is used only if enough real observations exist; rows lacking an actually-used feature are dropped.
+    train=train.dropna(subset=feats+[target])
+    if len(train)<300:
+        diag["reason"]=f"可訓練樣本 {len(train)} 筆，至少需 300 筆"
+        return None,diag
+    if train[target].nunique()<2:
+        diag["reason"]="歷史目標只有單一類別"
+        return None,diag
+
+    start=max(220,int(len(train)*.55))
+    probs=[]; actual=[]
+    for i in range(start,len(train),20):
+        tr=train.iloc[:i]
+        te=train.iloc[i:min(i+20,len(train))]
+        if te.empty or tr[target].nunique()<2:
+            continue
+        model=Pipeline([
+            ("scaler",StandardScaler()),
+            ("lr",LogisticRegression(max_iter=1800,class_weight="balanced"))
+        ])
+        model.fit(tr[feats],tr[target].astype(int))
+        probs.extend(model.predict_proba(te[feats])[:,1].tolist())
+        actual.extend(te[target].astype(int).tolist())
+
+    if len(actual)<60:
+        diag["reason"]=f"Walk-forward 樣本外驗證僅 {len(actual)} 筆"
+        return None,diag
+
+    final=Pipeline([
+        ("scaler",StandardScaler()),
+        ("lr",LogisticRegression(max_iter=1800,class_weight="balanced"))
+    ])
+    final.fit(train[feats],train[target].astype(int))
+
+    latest=data.iloc[[-1]][feats]
+    if latest.isna().any(axis=None):
+        diag["reason"]="最新一期某項實際使用資料尚未更新，因此不產生假機率"
+        return None,diag
+
+    p=float(final.predict_proba(latest)[:,1][0])
+    b=float(brier_score_loss(actual,probs))
+    quality="良好" if b<=.23 else ("普通" if b<=.26 else "不足")
+    diag.update({"status":quality,"reason":"Walk-forward OOS 驗證完成","n":len(actual),"brier":b})
+    return p,diag
+
+def _v181_label(p):
+    if p is None: return "資料不足"
+    if p>=.65: return "強勢偏多"
+    if p>=.55: return "偏多"
+    if p<=.35: return "強勢偏空"
+    if p<=.45: return "偏空"
+    return "中性"
+
+def _v181_pct(p):
+    return "資料不足" if p is None else f"{p*100:.1f}%"
+
+def _v181_latest_date(df):
+    if df is None or df.empty: return "無資料"
+    dc=_v181_date_col(df)
+    if dc is None: return "日期未知"
+    z=pd.to_datetime(df[dc],errors="coerce").dropna()
+    return "日期未知" if z.empty else str(z.max().date())
+
+def _v181_render(price_df,sid,token):
+    st.markdown("## 🔭 V18.1 多因子未來趨勢")
+    st.caption("預測 5／20／60 交易日；資料沒有取得就不計分、不補中性值。所有機率均以 Walk-forward 樣本外驗證。")
+
+    end=date.today()
+    start=end-timedelta(days=2200)
+
+    inst5=_v181_fetch("TaiwanStockInstitutionalInvestorsBuySell",sid,start,end,token)
+    margin5=_v181_fetch("TaiwanStockMarginPurchaseShortSale",sid,start,end,token)
+    revenue5=_v181_fetch("TaiwanStockMonthRevenue",sid,start,end,token)
+
+    # 財報先做來源健康檢查；只有存在明確發布日期時，未來版本才可安全納入歷史模型。
+    financial5=_v181_fetch("TaiwanStockFinancialStatements",sid,start,end,token)
+
+    data=_v181_build_dataset(price_df,inst5,margin5,revenue5)
+    feats,groups=_v181_available_features(data)
+
+    # 財報防偷看未來：沒有 release/announcement/publish 欄位就不進模型
+    fin_safe=False
+    if financial5 is not None and not financial5.empty:
+        fin_safe=any(c in financial5.columns for c in ["release_date","announcement_date","publish_date"])
+
+    st.markdown("### AI 本次實際使用資料")
+    status_rows=[
+        {"資料":"歷史價量","狀態":"✅ 已進模型","更新日期":_v181_latest_date(price_df),"說明":"價格、成交量、均線、波動、趨勢"},
+        {"資料":"三大法人","狀態":"✅ 已進模型" if groups["法人"] else "⚠️ 未進模型","更新日期":_v181_latest_date(inst5),"說明":"資料量不足時自動排除"},
+        {"資料":"融資融券","狀態":"✅ 已進模型" if groups["融資融券"] else "⚠️ 未進模型","更新日期":_v181_latest_date(margin5),"說明":"餘額變化特徵"},
+        {"資料":"月營收","狀態":"✅ 已進模型" if groups["月營收"] else "⚠️ 未進模型","更新日期":_v181_latest_date(revenue5),"說明":"MoM／YoY／YoY加速度"},
+        {"資料":"財務報表","狀態":"🟡 已取得但暫不進模型" if (financial5 is not None and not financial5.empty and not fin_safe) else ("✅ 可安全對齊" if fin_safe else "⚠️ 無資料"),"更新日期":_v181_latest_date(financial5),"說明":"沒有明確公開日期就禁止納入，避免偷看未來"},
+    ]
+    st.dataframe(pd.DataFrame(status_rows),use_container_width=True,hide_index=True)
+
+    R={}
+    for hz in (5,20,60):
+        R[hz]={
+            "up":_v181_walkforward(data,hz,"up"),
+            "plus5":_v181_walkforward(data,hz,"plus5"),
+            "dd8":_v181_walkforward(data,hz,"dd8"),
+        }
+
+    cols=st.columns(3)
+    for col,hz,title in zip(cols,(5,20,60),("短期｜約1週","波段｜約1個月","中期｜約3個月")):
+        up,du=R[hz]["up"]; p5,dp=R[hz]["plus5"]; dd,dr=R[hz]["dd8"]
+        with col:
+            st.markdown(f"### {title}")
+            st.markdown(f"**趨勢：{_v181_label(up)}**")
+            st.metric("正報酬機率",_v181_pct(up))
+            st.metric("上漲 >5% 機率",_v181_pct(p5))
+            st.metric("回撤 >8% 風險",_v181_pct(dd))
+            if up is None:
+                st.caption(du["reason"])
+            else:
+                st.caption(f"OOS {du['n']}筆｜Brier {du['brier']:.3f}｜模型品質 {du['status']}｜特徵 {len(du['features'])}項")
+
+    # 持有與加碼分離
+    p20=R[20]["up"][0]; p60=R[60]["up"][0]; dd20=R[20]["dd8"][0]
+    c=pd.to_numeric(price_df["close"],errors="coerce").dropna()
+    if len(c)>=120:
+        last=float(c.iloc[-1]); ma20=float(c.tail(20).mean()); ma60=float(c.tail(60).mean())
+        bias20=last/ma20-1
+        if p20 is not None and p60 is not None and p20>=.55 and p60>=.55 and last>=ma60:
+            hold="中期趨勢尚未轉弱"
+        elif p20 is not None and p20<=.45:
+            hold="中期趨勢轉弱警戒"
+        else:
+            hold="中性觀察"
+
+        if p20 is not None and p20>=.58:
+            add="趨勢偏多，但乖離過大，不追高" if bias20>.10 else ("趨勢偏多，等待回檔" if bias20>.05 else "趨勢偏多，可觀察分批條件")
+        elif p20 is not None and p20<=.45:
+            add="暫緩加碼"
+        else:
+            add="等待更明確訊號"
+
+        risk="20日回撤風險偏高" if dd20 is not None and dd20>=.50 else "目前未出現高回撤警示"
+        st.markdown("### 🎯 持有／加碼／風險")
+        a,b,c3=st.columns(3)
+        a.info(f"**持有狀態**\n\n{hold}")
+        b.info(f"**加碼狀態**\n\n{add}")
+        c3.warning(f"**風險狀態**\n\n{risk}")
+        st.caption(f"20日乖離 {bias20*100:+.1f}%｜MA20 {ma20:.2f}｜MA60 {ma60:.2f}")
+
+    return R
+
+_v181_results=_v181_render(price,sid,token)
+
 
 st.markdown("### 關鍵價位")
 a,b,c,e=st.columns(4)
