@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V25.0"
+APP_VERSION = "V25.0.1"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -2729,6 +2729,8 @@ def _v181_render(price_df,sid,token):
         return float(p),True
 
     st.markdown("### 短線方向")
+    # V25.0.1：直接由已完成驗證的 R 建立短線結果，避免引用舊版區間推估函式內的區域變數。
+    anchors={day:R.get(day,{}).get("up",(None,{}))[0] for day in (1,3,5,10)}
     rows=[]
     for day in (1,3,5,10):
         p=anchors.get(day)
