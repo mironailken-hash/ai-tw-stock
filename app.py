@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V22.0"
+APP_VERSION = "V22.1"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -2802,14 +2802,8 @@ def _v181_render(price_df,sid,token):
         st.markdown("### 🎯 直接講重點")
         a,b,c=st.columns(3); a.info(f"**手上有股票**\n\n{hold}"); b.info(f"**想繼續買**\n\n{add}"); c.warning(f"**現在風險**\n\n{risk}")
 
-    with st.expander("查看 AI 使用資料與最新日期"):
-        st.dataframe(pd.DataFrame([
-            {"資料":"股價與成交量","最新日期":latest_price},
-            {"資料":"外資／投信／自營商","最新日期":latest_inst},
-            {"資料":"融資／融券","最新日期":latest_margin},
-            {"資料":"公司月營收","最新日期":latest_rev},
-        ]),use_container_width=True,hide_index=True)
-        st.caption("顯示各來源實際最新公布日；休市日不會硬改成今天。")
+    with st.expander("資料日期｜需要時再看"):
+        st.caption(f"股價 {latest_price} ｜ 法人 {latest_inst} ｜ 融資融券 {latest_margin} ｜ 月營收 {latest_rev}")
     return R
 
 _v181_results=_v181_render(price,sid,token)
@@ -2833,32 +2827,25 @@ def _v22_team(price_df):
 
 _v22=_v22_team(price)
 if _v22:
-    st.markdown("### 🌍 世界金融研究團隊")
-    st.caption("像研究室一樣分工，但只顯示有資料支持的判斷；資料沒接好就直接說沒有，不假裝知道。")
-    a,b,c,d=st.columns(4)
-    a.metric("📊 技術",_v22["tech"])
-    b.metric("⚡ 動能",_v22["momentum"])
-    c.metric("🔥 市場熱度",_v22["attention"])
-    d.metric("🧭 長線",_v22["longterm"])
-    a,b,c,d=st.columns(4)
-    a.metric("🏦 籌碼","已納入")
-    b.metric("🏭 營收","已納入")
-    c.metric("🌐 全球市場","擴充中")
-    d.metric("🤖 AI模式","攻擊型")
-    st.info("研究室結論：目前先用個股價量、法人籌碼、融資融券、月營收與長期結構做主判斷；全球市場資料接妥並驗證日期後才加入權重。")
-    with st.expander("研究團隊後台"):
-        st.write("📊 技術：價格、成交量、均線、動能、波動")
-        st.write("🏦 籌碼：外資、投信、自營商、融資融券")
-        st.write("🏭 基本面：月營收已納入；財報要確認真正公布日後才進模型")
-        st.write("🌐 全球：台指期外資、美股科技／半導體、美元台幣、美債利率將逐項接入")
-        st.write("🤖 AI：先過歷史可靠度測試，再用攻擊型門檻提早表態")
+    st.markdown("### 🌍 研究團隊一句話")
+    _trend_text = "多方正在進攻" if _v22["tech"]=="多方進攻" else ("空方目前較強" if _v22["tech"]=="空方佔優" else "現在多空拉鋸")
+    _heat_text = "市場很熱" if _v22["attention"]=="非常熱" else ("市場開始升溫" if _v22["attention"]=="升溫" else ("市場偏冷" if _v22["attention"]=="冷清" else "市場熱度正常"))
+    st.success(f"**{_trend_text}｜{_v22['momentum']}｜{_heat_text}｜{_v22['longterm']}**")
+    x1,x2,x3,x4=st.columns(4)
+    x1.metric("現在方向",_v22["tech"])
+    x2.metric("攻擊力",_v22["momentum"])
+    x3.metric("市場熱度",_v22["attention"])
+    x4.metric("長線方向",_v22["longterm"])
+    with st.expander("參考資料｜小字版"):
+        st.caption("技術：價格、成交量、均線、動能、波動 ｜ 籌碼：外資、投信、自營商、融資融券 ｜ 基本面：月營收 ｜ AI：通過可靠度檢查後採攻擊型門檻")
+        st.caption("全球市場資料仍在擴充；尚未驗證完成的資料不會假裝已納入判斷。")
 
-st.markdown("### 重要價位")
+st.markdown("### 🧱 只看這四個價位")
 a,b,c,e=st.columns(4)
-a.metric("近期支撐",f"{support:.2f}")
-b.metric("近期壓力",f"{resistance:.2f}")
-c.metric("中期支撐",f"{support60:.2f}")
-e.metric("中期壓力",f"{resistance60:.2f}")
+a.metric("跌到這裡先看支撐",f"{support:.2f}")
+b.metric("漲到這裡先看壓力",f"{resistance:.2f}")
+c.metric("中線防守",f"{support60:.2f}")
+e.metric("中線突破目標",f"{resistance60:.2f}")
 
 if own=="已持有" and cost>0:
     st.markdown("### 我的持股")
