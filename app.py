@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V25.0.1"
+APP_VERSION = "V25.1"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -2784,14 +2784,14 @@ def _v181_render(price_df,sid,token):
         short_bull=p10 is not None and p10>=.51
         medium_bull=(p20 is not None and p20>=.51) or (p60 is not None and p60>=.51)
         structural_bull=last>ma240 and trend_1y in ("長線多方佔上風","長線偏多")
-        hold="多方還在，手上有單可續抱，但盯緊轉弱訊號" if (medium_bull or structural_bull) else ("短中期轉弱，要提高警覺" if p20 is not None and p20<.48 else "目前沒有明顯轉空，可繼續觀察")
+        hold="目前可續抱；如果轉弱或跌破關鍵支撐，再考慮減碼" if (medium_bull or structural_bull) else ("短中期轉弱，要提高警覺" if p20 is not None and p20<.48 else "目前沒有明顯轉空，可繼續觀察")
         if short_bull or medium_bull or structural_bull:
-            add="多方強，但追高風險大；等拉回承接再進攻" if bias20>.12 else ("仍偏多，可等小幅拉回" if bias20>.06 else "偏多，可留意分批布局")
+            add="先不要追高；等拉回守住後再留意買進" if bias20>.12 else ("可等小幅拉回再留意買進" if bias20>.06 else "可留意分批買進")
         else:
-            add="現在不是加碼點，等訊號翻多再動" if p20 is not None and p20<.48 else "先觀察，等待方向更明確"
-        risk="短線太熱，最怕急拉後甩尾，追價要小心" if bias20>.15 else ("已跌到中期趨勢下方，要注意轉弱" if last<ma60 else "目前沒有明顯轉空訊號")
-        st.markdown("### 現在怎麼看")
-        a,b,c=st.columns(3); a.info(f"**已經持有**\n\n{hold}"); b.info(f"**想買／加碼**\n\n{add}"); c.warning(f"**要小心**\n\n{risk}")
+            add="暫時不要買；等訊號翻多再看" if p20 is not None and p20<.48 else "先觀察，等待方向更明確"
+        risk="短線過熱；追高風險大，已有獲利可留意減碼保護" if bias20>.15 else ("跌破中期趨勢；賣出／減碼警戒升高" if last<ma60 else "目前沒有明確賣出訊號")
+        st.markdown("### 買還是賣？")
+        a,b,c=st.columns(3); a.info(f"**手上有股票**\n\n{hold}"); b.info(f"**想買股票**\n\n{add}"); c.warning(f"**賣出警戒**\n\n{risk}")
 
     with st.expander("資料日期｜需要時再看"):
         st.caption(f"股價 {latest_price} ｜ 法人 {latest_inst} ｜ 融資融券 {latest_margin} ｜ 月營收 {latest_rev}")
@@ -2802,11 +2802,11 @@ try:
     _c=pd.to_numeric(price["close"],errors="coerce").dropna()
     _m20=float(_c.tail(20).mean()); _m60=float(_c.tail(60).mean()); _last=float(close)
     if _last>_m20>_m60:
-        _main_call="偏多進攻"; _main_sub="多方目前佔上風，重點看拉回能不能守住。"; _main_cls="bull"
+        _main_call="可留意買進"; _main_sub="目前趨勢偏多；等拉回守住關鍵價位，比直接追高更合理。"; _main_cls="bull"
     elif _last<_m20<_m60:
-        _main_call="偏空防守"; _main_sub="空方目前較強，先顧風險，不急著搶反彈。"; _main_cls="bear"
+        _main_call="賣出／減碼警戒"; _main_sub="目前趨勢偏弱；持有者先顧風險，想買的人先不要急。"; _main_cls="bear"
     else:
-        _main_call="先等一下"; _main_sub="多空還沒分出勝負，等突破或轉強再動。"; _main_cls="wait"
+        _main_call="先觀望"; _main_sub="方向還不夠明確，等突破或轉強後再決定。"; _main_cls="wait"
     st.markdown(f"""
     <div class="v23-main {_main_cls}">
       <div class="v23-k">KEN AI 現在怎麼看</div>
