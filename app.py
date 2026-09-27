@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V22.2"
+APP_VERSION = "V23.0"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -636,6 +636,12 @@ details,details p,details span{color:#D9E5F0 !important;}
 div[data-testid="stMetric"]{background:#071522;border:1px solid #29445D;border-radius:12px;padding:12px 14px}
 div[data-testid="stMetric"] label{color:#CFE0ED!important}div[data-testid="stMetricValue"]{color:#FFF!important}
 @media(max-width:850px){.future-grid{grid-template-columns:repeat(2,1fr)}} 
+/* ===== V23 一眼決策首頁 ===== */
+.v23-main{background:linear-gradient(135deg,#071522,#0A1D2E);border:1px solid #38536B;border-left:5px solid #F0C85A;border-radius:16px;padding:18px 20px;margin:14px 0 18px;box-shadow:0 12px 30px rgba(0,0,0,.22)}
+.v23-main.bull{border-left-color:#FF5B61}.v23-main.bear{border-left-color:#49D17D}.v23-main.wait{border-left-color:#F0C85A}
+.v23-k{font-size:13px;color:#C9D8E5;font-weight:850;letter-spacing:.04em}.v23-call{font-size:34px;color:#FFF;font-weight:950;line-height:1.15;margin-top:5px}
+.v23-main.bull .v23-call{color:#FF777C}.v23-main.bear .v23-call{color:#63DA91}.v23-main.wait .v23-call{color:#F3D36F}
+.v23-sub{font-size:16px;color:#E6EEF5;font-weight:700;margin-top:7px}.v23-price{font-size:13px;color:#BFD0DE;margin-top:10px}.v23-price b{color:#FFF;font-size:16px}
 </style>
 """, unsafe_allow_html=True)
 
@@ -2205,14 +2211,8 @@ st.markdown(f"""
 # V15.2: ACTION CENTER moved to top; original duplicate removed.
 
 
-st.markdown(f"""
-<div class="panel">
-<div class="kicker">市場重點</div>
-<div style="font-size:25px;font-weight:900">{overall_icon} AI 綜合判斷｜{overall_label}</div>
-<div class="action-sub">短線目前為「{status.replace("🚀 ","").replace("🟢 ","").replace("🟡 ","").replace("⚠️ ","").replace("🔴 ","")}」。
-重點不是預測哪一天一定上漲，而是等待價格、量能與技術條件觸發後再更新訊號。</div>
-</div>
-""",unsafe_allow_html=True)
+# V23：舊市場重點卡移至後台，避免首頁重複結論。
+
 
 
 # V17.6｜多週期趨勢分層：盤中、短線、中線、長線不再共用同一個結論。
@@ -2812,12 +2812,33 @@ def _v181_render(price_df,sid,token):
         else:
             add="現在不是加碼點，等訊號翻多再動" if p20 is not None and p20<.48 else "先觀察，等待方向更明確"
         risk="短線太熱，最怕急拉後甩尾，追價要小心" if bias20>.15 else ("已跌到中期趨勢下方，要注意轉弱" if last<ma60 else "目前沒有明顯轉空訊號")
-        st.markdown("### 🎯 直接講重點")
-        a,b,c=st.columns(3); a.info(f"**手上有股票**\n\n{hold}"); b.info(f"**想繼續買**\n\n{add}"); c.warning(f"**現在風險**\n\n{risk}")
+        st.markdown("### 🎯 三句話看懂")
+        a,b,c=st.columns(3); a.info(f"**已經持有**\n\n{hold}"); b.info(f"**想買／加碼**\n\n{add}"); c.warning(f"**要小心**\n\n{risk}")
 
     with st.expander("資料日期｜需要時再看"):
         st.caption(f"股價 {latest_price} ｜ 法人 {latest_inst} ｜ 融資融券 {latest_margin} ｜ 月營收 {latest_rev}")
     return R
+
+# ===== V23 首頁核心：普通人先看這張 =====
+try:
+    _c=pd.to_numeric(price["close"],errors="coerce").dropna()
+    _m20=float(_c.tail(20).mean()); _m60=float(_c.tail(60).mean()); _last=float(close)
+    if _last>_m20>_m60:
+        _main_call="偏多進攻"; _main_sub="多方目前佔上風，重點看拉回能不能守住。"; _main_cls="bull"
+    elif _last<_m20<_m60:
+        _main_call="偏空防守"; _main_sub="空方目前較強，先顧風險，不急著搶反彈。"; _main_cls="bear"
+    else:
+        _main_call="先等一下"; _main_sub="多空還沒分出勝負，等突破或轉強再動。"; _main_cls="wait"
+    st.markdown(f"""
+    <div class="v23-main {_main_cls}">
+      <div class="v23-k">KEN AI 現在怎麼看</div>
+      <div class="v23-call">{_main_call}</div>
+      <div class="v23-sub">{_main_sub}</div>
+      <div class="v23-price">目前價格 <b>{_last:.2f}</b></div>
+    </div>
+    """,unsafe_allow_html=True)
+except Exception:
+    pass
 
 _v181_results=_v181_render(price,sid,token)
 
