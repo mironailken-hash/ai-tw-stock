@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V24.1"
+APP_VERSION = "V25.0"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -272,7 +272,7 @@ hr{border-color:#20354d;}
     border:1px solid #1D3A53 !important;
     border-radius:16px !important;
     padding:12px !important;
-    box-shadow:0 12px 30px rgba(0,0,0,.22) !important;
+    box-shadow:none !important;
 }
 
 /* Dataframe 外層深色 */
@@ -628,16 +628,16 @@ border-radius:10px;padding:9px 12px;margin:8px 0;color:#e8d9b5;font-size:12px}
 [data-testid="stMetricLabel"] p{color:#DCE7F2 !important;font-weight:750 !important;}
 details,details p,details span{color:#D9E5F0 !important;}
 /* ===== V22.2 未來判斷專業深色版 ===== */
-.future-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin:10px 0 8px}
+.future-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:10px 0 8px}
 .future-day{background:#071522;border:1px solid #29445D;border-radius:12px;padding:11px 12px;min-height:88px}
-.future-day.up{border-top:3px solid #FF5B61}.future-day.down{border-top:3px solid #49D17D}.future-day.wait{border-top:3px solid #F0C85A}
+.future-day.up{border-left:3px solid #FF5B61}.future-day.down{border-left:3px solid #49D17D}.future-day.wait{border-left:3px solid #F0C85A}
 .future-daynum{font-size:12px;color:#D5E2ED;font-weight:800}.future-daynum span{float:right;color:#8EA7BE;font-size:10px}
 .future-dir{font-size:18px;color:#FFF;font-weight:950;margin-top:8px}.future-prob{font-size:14px;color:#F2D56B;font-weight:850;margin-top:3px}
 div[data-testid="stMetric"]{background:#071522;border:1px solid #29445D;border-radius:12px;padding:12px 14px}
 div[data-testid="stMetric"] label{color:#CFE0ED!important}div[data-testid="stMetricValue"]{color:#FFF!important}
 @media(max-width:850px){.future-grid{grid-template-columns:repeat(2,1fr)}} 
 /* ===== V23 一眼決策首頁 ===== */
-.v23-main{background:linear-gradient(135deg,#071522,#0A1D2E);border:1px solid #38536B;border-left:5px solid #F0C85A;border-radius:16px;padding:18px 20px;margin:14px 0 18px;box-shadow:0 12px 30px rgba(0,0,0,.22)}
+.v23-main{background:#071522;border:1px solid #38536B;border-left:5px solid #F0C85A;border-radius:16px;padding:18px 20px;margin:14px 0 18px;box-shadow:0 12px 30px rgba(0,0,0,.22)}
 .v23-main.bull{border-left-color:#FF5B61}.v23-main.bear{border-left-color:#49D17D}.v23-main.wait{border-left-color:#F0C85A}
 .v23-k{font-size:13px;color:#C9D8E5;font-weight:850;letter-spacing:.04em}.v23-call{font-size:34px;color:#FFF;font-weight:950;line-height:1.15;margin-top:5px}
 .v23-main.bull .v23-call{color:#FF777C}.v23-main.bear .v23-call{color:#63DA91}.v23-main.wait .v23-call{color:#F3D36F}
@@ -2689,8 +2689,8 @@ def _v20_structure_trend(data, horizon):
         return "資料不足"
 
 def _v181_render(price_df,sid,token):
-    st.markdown("## 🔭 接下來怎麼走")
-    st.caption("先看方向；需要時再看機率與資料細節。")
+    st.markdown("## 接下來怎麼走")
+    st.caption("短線看 1、3、5、10 日；中長線看 1 個月到 2 年。")
 
     end=pd.Timestamp.now(tz="Asia/Taipei").date()
     short_start=end-timedelta(days=1825)
@@ -2728,30 +2728,29 @@ def _v181_render(price_df,sid,token):
         p=anchors[lo]+(anchors[hi]-anchors[lo])*(day-lo)/(hi-lo)
         return float(p),True
 
-    st.markdown("### 📅 未來10天")
+    st.markdown("### 短線方向")
     rows=[]
-    for day in range(1,11):
-        p,estimated=_interp_prob(day)
+    for day in (1,3,5,10):
+        p=anchors.get(day)
         if p is None:
             direction="先等等"; prob="—"; cls="wait"
         elif p>=.53:
-            direction="偏多 ↑"; prob=f"{p*100:.1f}%"; cls="up"
+            direction="偏多"; prob=f"{p*100:.1f}%"; cls="up"
         elif p<=.47:
-            direction="偏空 ↓"; prob=f"{p*100:.1f}%"; cls="down"
+            direction="偏空"; prob=f"{p*100:.1f}%"; cls="down"
         else:
-            direction="震盪 ↔"; prob=f"{p*100:.1f}%"; cls="wait"
-        rows.append((day,direction,prob,estimated,cls))
+            direction="震盪"; prob=f"{p*100:.1f}%"; cls="wait"
+        rows.append((day,direction,prob,cls))
     _cards=""
-    for day,direction,prob,estimated,cls in rows:
-        _tag="推估" if estimated else "AI"
-        _cards += f'<div class="future-day {cls}"><div class="future-daynum">第{day}天 <span>{_tag}</span></div><div class="future-dir">{direction}</div><div class="future-prob">{prob}</div></div>'
+    for day,direction,prob,cls in rows:
+        _cards += f'<div class="future-day {cls}"><div class="future-daynum">{day}日</div><div class="future-dir">{direction}</div><div class="future-prob">{prob}</div></div>'
     st.markdown(f'<div class="future-grid">{_cards}</div>',unsafe_allow_html=True)
-    st.caption("重點看方向即可。第1、3、5、10天是獨立AI驗證；其他天是區間趨勢推估。")
+    st.caption("只顯示有獨立歷史驗證的 1、3、5、10 日，不再用中間日期推估填滿畫面。")
 
     trend_1y=_v20_structure_trend(data,250)
     trend_2y=_v20_structure_trend(data,500)
     cols=st.columns(4)
-    for col,hz,title in zip(cols,(20,60),("未來約 1 個月","未來約 3 個月")):
+    for col,hz,title in zip(cols,(20,60),("1個月","3個月")):
         up,du=R[hz]["up"]
         with col:
             st.markdown(f"### {title}")
@@ -2765,12 +2764,12 @@ def _v181_render(price_df,sid,token):
                 st.caption("可信程度："+("較高" if du.get("status")=="良好" else "普通"))
 
     with cols[2]:
-        st.markdown("### 未來約 1 年")
+        st.markdown("### 1年")
         st.markdown(f"**{trend_1y}**")
         st.metric("判斷方式","長期趨勢")
         st.caption("價格結構、長期均線與營收方向。")
     with cols[3]:
-        st.markdown("### 未來約 2 年")
+        st.markdown("### 2年")
         st.markdown(f"**{trend_2y}**")
         st.metric("判斷方式","長期趨勢")
         st.caption("長期結構判斷，不硬做假精準機率。")
@@ -2789,7 +2788,7 @@ def _v181_render(price_df,sid,token):
         else:
             add="現在不是加碼點，等訊號翻多再動" if p20 is not None and p20<.48 else "先觀察，等待方向更明確"
         risk="短線太熱，最怕急拉後甩尾，追價要小心" if bias20>.15 else ("已跌到中期趨勢下方，要注意轉弱" if last<ma60 else "目前沒有明顯轉空訊號")
-        st.markdown("### 🎯 現在怎麼看")
+        st.markdown("### 現在怎麼看")
         a,b,c=st.columns(3); a.info(f"**已經持有**\n\n{hold}"); b.info(f"**想買／加碼**\n\n{add}"); c.warning(f"**要小心**\n\n{risk}")
 
     with st.expander("資料日期｜需要時再看"):
@@ -2842,7 +2841,7 @@ if _v22:
         st.caption(f"技術 {_v22['tech']} ｜ 動能 {_v22['momentum']} ｜ 熱度 {_v22['attention']} ｜ 長線 {_v22['longterm']}")
         st.caption("參考價格、成交量、均線、法人、融資融券與月營收；尚未完成驗證的全球資料不加入權重。")
 
-st.markdown("### 🧱 三個關鍵價位")
+st.markdown("### 三個關鍵價位")
 k1,k2,k3=st.columns(3)
 k1.metric("拉回先看",f"{support:.2f}")
 k2.metric("目前壓力",f"{resistance:.2f}")
@@ -2862,7 +2861,7 @@ if own=="已持有" and cost>0:
 # V19：移除重複的 AI 模型面板，只保留價格走勢圖。
 st.markdown("""
 <div class="section-pro">
-  <div class="section-pro-title">📈 最近價格走勢</div>
+  <div class="section-pro-title">價格走勢</div>
   <div class="section-pro-sub">顯示約 2 年走勢，方便對照長期方向</div>
 </div>
 """, unsafe_allow_html=True)
