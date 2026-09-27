@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V21.2"
+APP_VERSION = "V22.0"
 APP_RELEASE_TIME = "2026/09/27 15:45:00"
 from urllib.parse import quote
 
@@ -2810,49 +2810,44 @@ def _v181_render(price_df,sid,token):
 
 _v181_results=_v181_render(price,sid,token)
 
-# ===== V21 金融研究團隊：前台只顯示精簡總結，詳細因子留在摺疊區 =====
-def _v21_research_team_summary(price_df):
+# ===== V22 世界金融研究團隊 =====
+def _v22_team(price_df):
     try:
         c=pd.to_numeric(price_df["close"],errors="coerce").dropna()
         v=pd.to_numeric(price_df.get("Trading_Volume",price_df.get("volume",pd.Series(dtype=float))),errors="coerce").dropna()
-        if len(c)<60:
-            return None
-        last=float(c.iloc[-1])
-        ma20=float(c.tail(20).mean())
-        ma60=float(c.tail(60).mean())
-        ret20=(last/float(c.iloc[-21])-1) if len(c)>=21 and float(c.iloc[-21])!=0 else np.nan
-        ret60=(last/float(c.iloc[-61])-1) if len(c)>=61 and float(c.iloc[-61])!=0 else np.nan
-        vol_hot=np.nan
-        if len(v)>=60 and float(v.tail(60).mean())>0:
-            vol_hot=float(v.tail(20).mean()/v.tail(60).mean())
-        attention="普通"
-        if pd.notna(vol_hot):
-            if vol_hot>=1.8: attention="非常高"
-            elif vol_hot>=1.25: attention="高"
-            elif vol_hot<0.65: attention="低"
-        trend="震盪"
-        if last>ma20>ma60 and (pd.isna(ret60) or ret60>0): trend="偏多"
-        elif last<ma20<ma60 and (pd.isna(ret60) or ret60<0): trend="偏空"
-        return {"trend":trend,"attention":attention,"ret20":ret20,"ret60":ret60,"vol_hot":vol_hot}
-    except Exception:
-        return None
+        if len(c)<120:return None
+        last=float(c.iloc[-1]); m20=float(c.tail(20).mean()); m60=float(c.tail(60).mean()); m120=float(c.tail(120).mean())
+        r20=last/float(c.iloc[-21])-1; r60=last/float(c.iloc[-61])-1
+        vr=float(v.tail(20).mean()/v.tail(60).mean()) if len(v)>=60 and float(v.tail(60).mean())>0 else np.nan
+        return {
+          "tech":"多方進攻" if last>m20>m60 else ("空方佔優" if last<m20<m60 else "多空拉鋸"),
+          "momentum":"動能升溫" if r20>.05 else ("動能轉弱" if r20<-.05 else "動能普通"),
+          "attention":"非常熱" if pd.notna(vr) and vr>=1.8 else ("升溫" if pd.notna(vr) and vr>=1.2 else ("冷清" if pd.notna(vr) and vr<.7 else "正常")),
+          "longterm":"長線多方" if last>m120 and r60>0 else ("長線偏弱" if last<m120 and r60<0 else "長線整理"),
+          "vr":vr}
+    except Exception:return None
 
-_v21_team=_v21_research_team_summary(price)
-if _v21_team:
-    st.markdown("### 🧠 金融研究團隊總結")
-    _a,_b,_c=st.columns(3)
-    _a.metric("目前趨勢",_v21_team["trend"])
-    _b.metric("市場關注",_v21_team["attention"])
-    _c.metric("近20日走勢",f'{_v21_team["ret20"]*100:+.1f}%' if pd.notna(_v21_team["ret20"]) else "—")
-    with st.expander("研究團隊後台參考項目"):
-        st.write("**技術分析**：股價、成交量、均線、動能、波動。")
-        st.write("**籌碼分析**：外資／投信／自營商、融資融券。")
-        st.write("**基本面**：月營收已納入；完整財報因公布日期對齊問題，目前保守留在後台，不直接灌入歷史模型。")
-        st.write("**長期分析**：1年、2年使用長期價格結構與營收方向，不硬做假精準機率。")
-        st.write("**市場關注**：目前先用成交量熱度判斷；新聞、搜尋熱度、產業供應鏈與全球總經資料會在後續資料層擴充。")
-        st.caption("這些因子主要在後台工作，避免主頁重複、互相衝突。")
-
-
+_v22=_v22_team(price)
+if _v22:
+    st.markdown("### 🌍 世界金融研究團隊")
+    st.caption("像研究室一樣分工，但只顯示有資料支持的判斷；資料沒接好就直接說沒有，不假裝知道。")
+    a,b,c,d=st.columns(4)
+    a.metric("📊 技術",_v22["tech"])
+    b.metric("⚡ 動能",_v22["momentum"])
+    c.metric("🔥 市場熱度",_v22["attention"])
+    d.metric("🧭 長線",_v22["longterm"])
+    a,b,c,d=st.columns(4)
+    a.metric("🏦 籌碼","已納入")
+    b.metric("🏭 營收","已納入")
+    c.metric("🌐 全球市場","擴充中")
+    d.metric("🤖 AI模式","攻擊型")
+    st.info("研究室結論：目前先用個股價量、法人籌碼、融資融券、月營收與長期結構做主判斷；全球市場資料接妥並驗證日期後才加入權重。")
+    with st.expander("研究團隊後台"):
+        st.write("📊 技術：價格、成交量、均線、動能、波動")
+        st.write("🏦 籌碼：外資、投信、自營商、融資融券")
+        st.write("🏭 基本面：月營收已納入；財報要確認真正公布日後才進模型")
+        st.write("🌐 全球：台指期外資、美股科技／半導體、美元台幣、美債利率將逐項接入")
+        st.write("🤖 AI：先過歷史可靠度測試，再用攻擊型門檻提早表態")
 
 st.markdown("### 重要價位")
 a,b,c,e=st.columns(4)
