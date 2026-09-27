@@ -12,6 +12,7 @@ try:
     from sklearn.preprocessing import StandardScaler
     from sklearn.pipeline import Pipeline
     from sklearn.metrics import brier_score_loss
+    from sklearn.isotonic import IsotonicRegression
     SKLEARN_OK = True
 except Exception as _skerr:
     SKLEARN_OK = False
@@ -23,8 +24,8 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V18.1.1"
-APP_RELEASE_TIME = "2026/09/27 13:44:58"
+APP_VERSION = "V18.3"
+APP_RELEASE_TIME = "2026/09/27 13:57:25"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -1327,7 +1328,7 @@ def taifex_pc_ratio():
     return None
 
 def taifex_foreign_tx():
-    """期交所臺股期貨三大法人；抓外資未平倉多空淨額。"""
+    """期交所臺股期貨外資／投信／自營商；抓外資未平倉多空淨額。"""
     try:
         tabs=_safe_read_html("https://www.taifex.com.tw/cht/3/futContractsDateExcel")
         for df in tabs:
@@ -1349,7 +1350,7 @@ def taifex_foreign_tx():
     return None
 
 def margin_finmind(sid, token=""):
-    """FinMind 融資融券；資料源不可用時回 None。"""
+    """FinMind 融資／融券；資料源不可用時回 None。"""
     try:
         start=(datetime.now()-timedelta(days=45)).strftime("%Y-%m-%d")
         p={"dataset":"TaiwanStockMarginPurchaseShortSale","data_id":sid,"start_date":start}
@@ -1844,7 +1845,7 @@ _v8_flags={
     "歷史行情": price is not None and len(price)>=20,
     "技術面": True,
     "法人": inst is not None and len(inst)>0,
-    "融資融券": _v8_margin is not None,
+    "融資／融券": _v8_margin is not None,
     "借券": _v8_lending is not None,
     "臺指選擇權": _v8_pc is not None,
     "臺指期外資": _v8_tx is not None,
@@ -2194,7 +2195,7 @@ st.markdown(f"""
  <div class="v8-grid">
    <div><b>臺指選擇權</b><br>{_pc_txt}</div>
    <div><b>臺指期外資</b><br>{_tx_txt}</div>
-   <div><b>融資融券</b><br>{_mg_txt}</div>
+   <div><b>融資／融券</b><br>{_mg_txt}</div>
    <div><b>借券資料</b><br>{_ld_txt}</div>
  </div>
 </div>
@@ -2368,7 +2369,7 @@ def _v176_color(sig):
     if "偏空" in sig: return "#62d99a"
     return "#b9c6d8"
 
-st.markdown("## 趨勢燈號")
+st.markdown("## 現在的走勢")
 _v176_cols=st.columns(3)
 for _col,_title,_key in zip(_v176_cols,["短線｜1–10交易日","中線｜2–6週","長線｜1–6月"],["short","mid","long"]):
     _sig,_reason=_v176[_key]
@@ -2386,7 +2387,7 @@ for _col,_title,_key in zip(_v176_cols,["短線｜1–10交易日","中線｜2�
 
 # =========================================================
 # V18.1｜多因子未來趨勢引擎
-# 價量 + 法人 + 融資融券 + 月營收（僅在日期可安全對齊時納入）
+# 價量 + 法人 + 融資／融券 + 公司月營收（僅在日期可安全對齊時納入）
 # 5 / 20 / 60 交易日；Walk-forward OOS；缺資料不補假中性值
 # =========================================================
 
@@ -2427,7 +2428,7 @@ def _v181_daily_institution(inst):
     return g[["date","inst_net_5","inst_net_20","inst_strength_20"]]
 
 def _v181_daily_margin(margin):
-    """融資融券資料：採可辨識的餘額欄位，計算變化率。"""
+    """融資／融券資料：採可辨識的餘額欄位，計算變化率。"""
     if margin is None or margin.empty or "date" not in margin.columns:
         return pd.DataFrame()
     z=margin.copy()
@@ -2448,7 +2449,7 @@ def _v181_daily_margin(margin):
 
 def _v181_revenue_features(rev):
     """
-    月營收。
+    公司月營收。
     只有能找到日期欄位與 revenue 欄位才建立特徵；
     以 merge_asof 向後對齊，不把未來月份回填到過去。
     """
@@ -2528,7 +2529,7 @@ _V181_OPTIONAL_FEATURES=[
 
 def _v181_available_features(data):
     feats=list(_V181_PRICE_FEATURES)
-    used_groups={"價量":True,"法人":False,"融資融券":False,"月營收":False}
+    used_groups={"價量":True,"法人":False,"融資／融券":False,"公司月營收":False}
     for c in _V181_OPTIONAL_FEATURES:
         if c in data.columns:
             # V18.1.1：只計算有限數值，避免 inf / -inf 被誤認為有效資料
@@ -2536,36 +2537,50 @@ def _v181_available_features(data):
             if finite.notna().sum()>=120:
                 feats.append(c)
                 if c.startswith("inst_"): used_groups["法人"]=True
-                elif c.startswith("margin_") or c.startswith("short_"): used_groups["融資融券"]=True
-                elif c.startswith("revenue_"): used_groups["月營收"]=True
+                elif c.startswith("margin_") or c.startswith("short_"): used_groups["融資／融券"]=True
+                elif c.startswith("revenue_"): used_groups["公司月營收"]=True
     return feats,used_groups
 
 def _v181_walkforward(data,hz,kind="up"):
-    diag={"status":"資料不足","reason":"","n":0,"brier":np.nan,"features":[]}
+    """
+    V18.2
+    1. Expanding-window walk-forward 產生真正 OOS raw probabilities
+    2. OOS 前 60% 僅用來學習 isotonic calibration
+    3. OOS 後 40% 完全保留作 calibration evaluation
+    4. 與「只猜歷史發生率」baseline Brier 比較
+    5. 若校準後沒有優於 baseline，或 Brier 過差，就不把數字當作可信機率顯示
+    """
+    diag={
+        "status":"資料不足","reason":"","n":0,
+        "brier":np.nan,"raw_brier":np.nan,"baseline_brier":np.nan,
+        "skill":np.nan,"features":[],"raw_probability":None,
+        "calibrated_probability":None
+    }
     if not SKLEARN_OK:
         diag["reason"]="scikit-learn 未載入"
         return None,diag
+
     target={"up":f"target_up_{hz}","plus5":f"target_plus5_{hz}","dd8":f"target_dd8_{hz}"}[kind]
     feats,groups=_v181_available_features(data)
     diag["features"]=feats
     diag["groups"]=groups
-    train=data.iloc[:-hz].copy()
 
-    # V18.1.1：模型只接受有限數值。pct_change / 比率在分母為 0 時可能產生 inf，
-    # StandardScaler 會因此直接 ValueError；統一轉 NaN 後再排除，不用假值補資料。
-    for _c in set(feats + [target]):
-        if _c in train.columns:
-            train[_c]=pd.to_numeric(train[_c],errors="coerce").replace([np.inf,-np.inf],np.nan)
+    train=data.iloc[:-hz].copy()
+    for c in set(feats+[target]):
+        if c in train.columns:
+            train[c]=pd.to_numeric(train[c],errors="coerce").replace([np.inf,-np.inf],np.nan)
     train=train.dropna(subset=feats+[target])
-    if len(train)<300:
-        diag["reason"]=f"可訓練樣本 {len(train)} 筆，至少需 300 筆"
+
+    if len(train)<360:
+        diag["reason"]=f"可訓練樣本 {len(train)} 筆，V18.2 至少需 360 筆"
         return None,diag
     if train[target].nunique()<2:
         diag["reason"]="歷史目標只有單一類別"
         return None,diag
 
-    start=max(220,int(len(train)*.55))
-    probs=[]; actual=[]
+    # Walk-forward OOS
+    start=max(240,int(len(train)*.50))
+    raw_probs=[]; actual=[]
     for i in range(start,len(train),20):
         tr=train.iloc[:i]
         te=train.iloc[i:min(i+20,len(train))]
@@ -2573,41 +2588,104 @@ def _v181_walkforward(data,hz,kind="up"):
             continue
         model=Pipeline([
             ("scaler",StandardScaler()),
-            ("lr",LogisticRegression(max_iter=1800,class_weight="balanced"))
+            ("lr",LogisticRegression(max_iter=2000,class_weight="balanced",C=0.35))
         ])
         model.fit(tr[feats],tr[target].astype(int))
-        probs.extend(model.predict_proba(te[feats])[:,1].tolist())
+        raw_probs.extend(model.predict_proba(te[feats])[:,1].tolist())
         actual.extend(te[target].astype(int).tolist())
 
-    if len(actual)<60:
-        diag["reason"]=f"Walk-forward 樣本外驗證僅 {len(actual)} 筆"
+    if len(actual)<120:
+        diag["reason"]=f"Walk-forward OOS 僅 {len(actual)} 筆，V18.2 至少需 120 筆"
         return None,diag
 
+    raw=np.clip(np.asarray(raw_probs,dtype=float),0.001,0.999)
+    y=np.asarray(actual,dtype=int)
+
+    # Chronological calibration/evaluation split: no random shuffle.
+    cut=max(60,int(len(y)*0.60))
+    if len(y)-cut<40:
+        diag["reason"]="獨立校準評估樣本不足"
+        return None,diag
+
+    cal_raw,cal_y=raw[:cut],y[:cut]
+    eval_raw,eval_y=raw[cut:],y[cut:]
+
+    # Isotonic calibration learned only from earlier OOS observations.
+    iso_eval=IsotonicRegression(out_of_bounds="clip",y_min=0.02,y_max=0.98)
+    iso_eval.fit(cal_raw,cal_y)
+    eval_cal=np.clip(iso_eval.transform(eval_raw),0.02,0.98)
+
+    raw_brier=float(brier_score_loss(eval_y,eval_raw))
+    cal_brier=float(brier_score_loss(eval_y,eval_cal))
+
+    # Baseline is the event rate known from calibration period only.
+    base_rate=float(np.mean(cal_y))
+    baseline=np.full(len(eval_y),base_rate,dtype=float)
+    baseline_brier=float(brier_score_loss(eval_y,baseline))
+    skill=(baseline_brier-cal_brier)/baseline_brier if baseline_brier>0 else np.nan
+
+    # Final raw model uses all historical training data.
     final=Pipeline([
         ("scaler",StandardScaler()),
-        ("lr",LogisticRegression(max_iter=1800,class_weight="balanced"))
+        ("lr",LogisticRegression(max_iter=2000,class_weight="balanced",C=0.35))
     ])
     final.fit(train[feats],train[target].astype(int))
 
     latest=data.iloc[[-1]][feats].copy()
     latest=latest.apply(pd.to_numeric,errors="coerce").replace([np.inf,-np.inf],np.nan)
     if latest.isna().any(axis=None):
-        diag["reason"]="最新一期某項實際使用資料尚未更新，因此不產生假機率"
+        diag["reason"]="最新一期某項實際使用資料尚未更新"
         return None,diag
 
-    p=float(final.predict_proba(latest)[:,1][0])
-    b=float(brier_score_loss(actual,probs))
-    quality="良好" if b<=.23 else ("普通" if b<=.26 else "不足")
-    diag.update({"status":quality,"reason":"Walk-forward OOS 驗證完成","n":len(actual),"brier":b})
-    return p,diag
+    raw_now=float(final.predict_proba(latest)[:,1][0])
+
+    # For final production calibration, learn from all historical OOS predictions.
+    iso_final=IsotonicRegression(out_of_bounds="clip",y_min=0.02,y_max=0.98)
+    iso_final.fit(raw,y)
+    calibrated=float(np.clip(iso_final.transform([raw_now])[0],0.02,0.98))
+
+    # Reliability gate. A "probability" is exposed only when it beats the historical-rate baseline.
+    # This intentionally suppresses seductive 94-100% outputs when validation says the model is weak.
+    beats_baseline=(cal_brier < baseline_brier)
+    acceptable_brier=(cal_brier <= 0.26)
+    positive_skill=(np.isfinite(skill) and skill >= 0.02)
+
+    if cal_brier<=0.22 and positive_skill:
+        quality="良好"
+    elif acceptable_brier and beats_baseline:
+        quality="可用"
+    else:
+        quality="可信度不足"
+
+    diag.update({
+        "status":quality,
+        "reason":"V18.2 時序校準驗證完成",
+        "n":len(y),
+        "eval_n":len(eval_y),
+        "brier":cal_brier,
+        "raw_brier":raw_brier,
+        "baseline_brier":baseline_brier,
+        "skill":skill,
+        "raw_probability":raw_now,
+        "calibrated_probability":calibrated
+    })
+
+    if quality=="可信度不足":
+        diag["reason"]=(
+            f"模型未通過可信度門檻：校準Brier {cal_brier:.3f}｜"
+            f"基準 {baseline_brier:.3f}｜Skill {skill*100:+.1f}%"
+        )
+        return None,diag
+
+    return calibrated,diag
 
 def _v181_label(p):
-    if p is None: return "資料不足"
-    if p>=.65: return "強勢偏多"
-    if p>=.55: return "偏多"
-    if p<=.35: return "強勢偏空"
-    if p<=.45: return "偏空"
-    return "中性"
+    if p is None: return "目前還不能可靠判斷"
+    if p>=.65: return "未來看漲"
+    if p>=.55: return "比較有機會上漲"
+    if p<=.35: return "未來看跌"
+    if p<=.45: return "比較有可能下跌"
+    return "方向還不明顯"
 
 def _v181_pct(p):
     return "資料不足" if p is None else f"{p*100:.1f}%"
@@ -2620,8 +2698,8 @@ def _v181_latest_date(df):
     return "日期未知" if z.empty else str(z.max().date())
 
 def _v181_render(price_df,sid,token):
-    st.markdown("## 🔭 V18.1 多因子未來趨勢")
-    st.caption("預測 5／20／60 交易日；資料沒有取得就不計分、不補中性值。所有機率均以 Walk-forward 樣本外驗證。")
+    st.markdown("## 🔭 AI 幫你看未來走勢")
+    st.caption("分別看未來約 1 週、1 個月、3 個月。只有當 AI 過去的預測表現達到基本標準，才會顯示機率；不夠可靠時會直接提醒你。")
 
     end=date.today()
     start=end-timedelta(days=2200)
@@ -2641,15 +2719,19 @@ def _v181_render(price_df,sid,token):
     if financial5 is not None and not financial5.empty:
         fin_safe=any(c in financial5.columns for c in ["release_date","announcement_date","publish_date"])
 
-    st.markdown("### AI 本次實際使用資料")
+    st.markdown("### 這次 AI 有參考哪些資料？")
     status_rows=[
-        {"資料":"歷史價量","狀態":"✅ 已進模型","更新日期":_v181_latest_date(price_df),"說明":"價格、成交量、均線、波動、趨勢"},
-        {"資料":"三大法人","狀態":"✅ 已進模型" if groups["法人"] else "⚠️ 未進模型","更新日期":_v181_latest_date(inst5),"說明":"資料量不足時自動排除"},
-        {"資料":"融資融券","狀態":"✅ 已進模型" if groups["融資融券"] else "⚠️ 未進模型","更新日期":_v181_latest_date(margin5),"說明":"餘額變化特徵"},
-        {"資料":"月營收","狀態":"✅ 已進模型" if groups["月營收"] else "⚠️ 未進模型","更新日期":_v181_latest_date(revenue5),"說明":"MoM／YoY／YoY加速度"},
-        {"資料":"財務報表","狀態":"🟡 已取得但暫不進模型" if (financial5 is not None and not financial5.empty and not fin_safe) else ("✅ 可安全對齊" if fin_safe else "⚠️ 無資料"),"更新日期":_v181_latest_date(financial5),"說明":"沒有明確公開日期就禁止納入，避免偷看未來"},
+        {"資料":"股價與成交量","狀態":"✅ 有參考","更新日期":_v181_latest_date(price_df),"說明":"股價、成交量與近期走勢"},
+        {"資料":"外資／投信／自營商","狀態":"✅ 有參考" if groups["法人"] else "⚠️ 這次沒有使用","更新日期":_v181_latest_date(inst5),"說明":"資料不夠完整時，AI 會自動不用"},
+        {"資料":"融資／融券","狀態":"✅ 有參考" if groups["融資／融券"] else "⚠️ 這次沒有使用","更新日期":_v181_latest_date(margin5),"說明":"觀察融資與融券增加或減少"},
+        {"資料":"公司月營收","狀態":"✅ 有參考" if groups["公司月營收"] else "⚠️ 這次沒有使用","更新日期":_v181_latest_date(revenue5),"說明":"觀察營收比上月、去年同期及成長速度"},
+        {"資料":"公司財報","狀態":"🟡 有資料，但這次先不使用" if (financial5 is not None and not financial5.empty and not fin_safe) else ("✅ 資料時間可確認" if fin_safe else "⚠️ 目前沒有資料"),"更新日期":_v181_latest_date(financial5),"說明":"無法確認當時何時公開，就先不用，避免 AI 誤用未來才知道的資料"},
     ]
     st.dataframe(pd.DataFrame(status_rows),use_container_width=True,hide_index=True)
+    st.info(
+        "V18.2 可信度規則：未來機率必須在時間序列樣本外驗證中優於「只猜歷史發生率」的基準模型，"
+        "並通過 Brier 門檻才會顯示。未通過時直接標示資料／模型可信度不足，不以 94%～100% 的極端數字誤導。"
+    )
 
     R={}
     for hz in (5,20,60):
@@ -2660,18 +2742,27 @@ def _v181_render(price_df,sid,token):
         }
 
     cols=st.columns(3)
-    for col,hz,title in zip(cols,(5,20,60),("短期｜約1週","波段｜約1個月","中期｜約3個月")):
+    for col,hz,title in zip(cols,(5,20,60),("未來約 1 週","未來約 1 個月","未來約 3 個月")):
         up,du=R[hz]["up"]; p5,dp=R[hz]["plus5"]; dd,dr=R[hz]["dd8"]
         with col:
             st.markdown(f"### {title}")
             st.markdown(f"**趨勢：{_v181_label(up)}**")
-            st.metric("正報酬機率",_v181_pct(up))
-            st.metric("上漲 >5% 機率",_v181_pct(p5))
-            st.metric("回撤 >8% 風險",_v181_pct(dd))
+            st.metric("未來上漲機會",_v181_pct(up))
+            st.metric("漲超過 5% 的機會",_v181_pct(p5))
+            st.metric("中途跌超過 8% 的風險",_v181_pct(dd))
             if up is None:
-                st.caption(du["reason"])
+                st.warning("⚠️ 目前這個預測還不夠可靠")
+                st.caption("AI 過去的測試表現還沒有達到我們設定的標準，所以這次不建議參考這個機率。")
             else:
-                st.caption(f"OOS {du['n']}筆｜Brier {du['brier']:.3f}｜模型品質 {du['status']}｜特徵 {len(du['features'])}項")
+                confidence = "高" if du.get("status") == "良好" else "普通"
+                st.caption(f"AI 可信程度：{confidence}｜這次參考 {len(du['features'])} 項資料")
+            with st.expander("查看 AI 詳細測試資料"):
+                skill_txt = "無法計算" if not np.isfinite(du.get("skill",np.nan)) else f"{du['skill']*100:+.1f}%"
+                st.write(f"歷史測試筆數：{du.get('n',0)}")
+                st.write(f"獨立檢查筆數：{du.get('eval_n',0)}")
+                st.write(f"AI 誤差值（越低越好）：{du.get('brier',np.nan):.3f}" if np.isfinite(du.get('brier',np.nan)) else "AI 誤差值：資料不足")
+                st.write(f"基本比較值：{du.get('baseline_brier',np.nan):.3f}" if np.isfinite(du.get('baseline_brier',np.nan)) else "基本比較值：資料不足")
+                st.write(f"比基本方法進步：{skill_txt}")
 
     # 持有與加碼分離
     p20=R[20]["up"][0]; p60=R[60]["up"][0]; dd20=R[20]["dd8"][0]
@@ -2680,25 +2771,25 @@ def _v181_render(price_df,sid,token):
         last=float(c.iloc[-1]); ma20=float(c.tail(20).mean()); ma60=float(c.tail(60).mean())
         bias20=last/ma20-1
         if p20 is not None and p60 is not None and p20>=.55 and p60>=.55 and last>=ma60:
-            hold="中期趨勢尚未轉弱"
+            hold="目前走勢還沒有明顯轉弱"
         elif p20 is not None and p20<=.45:
-            hold="中期趨勢轉弱警戒"
+            hold="走勢開始轉弱，要提高警覺"
         else:
-            hold="中性觀察"
+            hold="方向還不明顯，先觀察"
 
         if p20 is not None and p20>=.58:
-            add="趨勢偏多，但乖離過大，不追高" if bias20>.10 else ("趨勢偏多，等待回檔" if bias20>.05 else "趨勢偏多，可觀察分批條件")
+            add="未來仍偏上漲，但現在漲得太快，先不要追高" if bias20>.10 else ("未來仍偏上漲，可以等價格拉回再觀察" if bias20>.05 else "未來偏上漲，可以觀察是否適合分批布局")
         elif p20 is not None and p20<=.45:
-            add="暫緩加碼"
+            add="現在先不要再買"
         else:
-            add="等待更明確訊號"
+            add="先不要急著買，等方向更清楚"
 
-        risk="20日回撤風險偏高" if dd20 is not None and dd20>=.50 else "目前未出現高回撤警示"
-        st.markdown("### 🎯 持有／加碼／風險")
+        risk="未來一個月出現明顯下跌的風險偏高" if dd20 is not None and dd20>=.50 else "目前沒有出現明顯的大跌警示"
+        st.markdown("### 🎯 我現在該怎麼看？")
         a,b,c3=st.columns(3)
-        a.info(f"**持有狀態**\n\n{hold}")
-        b.info(f"**加碼狀態**\n\n{add}")
-        c3.warning(f"**風險狀態**\n\n{risk}")
+        a.info(f"**手上有股票怎麼辦？**\n\n{hold}")
+        b.info(f"**現在適合再買嗎？**\n\n{add}")
+        c3.warning(f"**現在要注意什麼？**\n\n{risk}")
         st.caption(f"20日乖離 {bias20*100:+.1f}%｜MA20 {ma20:.2f}｜MA60 {ma60:.2f}")
 
     return R
@@ -3052,7 +3143,7 @@ def _v158_category(title, source):
                     "ettoday財經","壹蘋財經","鏡週刊財經"]
     general_media = ["tvbs","東森","三立","中時","自由時報","聯合新聞網",
                      "ettoday","民視","華視","台視"]
-    market_terms = ["盤中","盤勢","法人","三大法人","成交量","籌碼","外資",
+    market_terms = ["盤中","盤勢","法人","外資／投信／自營商","成交量","籌碼","外資",
                     "投信","股價","個股","漲停","跌停","市場","類股","族群"]
 
     if any(k.lower() in text for k in official):
