@@ -24,8 +24,8 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V20.0"
-APP_RELEASE_TIME = "2026/09/27 14:55:00"
+APP_VERSION = "V20.1"
+APP_RELEASE_TIME = "2026/09/27 15:20:00"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -2492,6 +2492,7 @@ def _v181_available_features(data):
                 elif c.startswith("revenue_"): used_groups["公司月營收"]=True
     return feats,used_groups
 
+@st.cache_data(ttl=3600, show_spinner=False)
 def _v181_walkforward(data,hz,kind="up"):
     """
     V18.2
@@ -2513,6 +2514,11 @@ def _v181_walkforward(data,hz,kind="up"):
 
     target={"up":f"target_up_{hz}","plus5":f"target_plus5_{hz}","dd8":f"target_dd8_{hz}"}[kind]
     feats,groups=_v181_available_features(data)
+    # V20.1：1～3個月模型只使用當時真正需要的中短期特徵，
+    # 不再被 240/500 日長期欄位拖慢或縮短可訓練樣本。
+    if hz <= 60:
+        long_only={"ret_240","ret_500","ma_bias_240","trend_slope_120","trend_slope_240"}
+        feats=[f for f in feats if f not in long_only]
     diag["features"]=feats
     diag["groups"]=groups
 
@@ -2533,7 +2539,7 @@ def _v181_walkforward(data,hz,kind="up"):
     # Walk-forward OOS
     start=max(240,int(len(train)*.50))
     raw_probs=[]; actual=[]
-    step = 60 if hz >= 250 else 20
+    step = 120 if hz >= 250 else 60
     for i in range(start,len(train),step):
         tr=train.iloc[:i]
         te=train.iloc[i:min(i+20,len(train))]
@@ -2686,50 +2692,70 @@ def _v20_structure_trend(data, horizon):
 
 def _v181_render(price_df,sid,token):
     st.markdown("## 🔭 AI 看未來")
-    st.caption("主頁只保留最重要的方向。1年、2年屬長期趨勢估計，不代表股價一定會照這個方向走。")
+    st.caption("資料先抓好，再做判斷。1個月、3個月用AI歷史測試；1年、2年改看長期結構，速度會快很多。")
 
     end=pd.Timestamp.now(tz="Asia/Taipei").date()
-    start=end-timedelta(days=4380)
+    # 法人／融資只抓近 5 年，避免每次載入 12 年逐日資料。
+    short_start=end-timedelta(days=1825)
+    # 月營收抓較長期間，供長期結構判斷。
+    long_start=end-timedelta(days=4380)
 
-    inst5=_v181_fetch("TaiwanStockInstitutionalInvestorsBuySell",sid,start,end,token)
-    margin5=_v181_fetch("TaiwanStockMarginPurchaseShortSale",sid,start,end,token)
-    revenue5=_v181_fetch("TaiwanStockMonthRevenue",sid,start,end,token)
+    inst5=_v181_fetch("TaiwanStockInstitutionalInvestorsBuySell",sid,short_start,end,token)
+    margin5=_v181_fetch("TaiwanStockMarginPurchaseShortSale",sid,short_start,end,token)
+    revenue5=_v181_fetch("TaiwanStockMonthRevenue",sid,long_start,end,token)
 
     data=_v181_build_dataset(price_df,inst5,margin5,revenue5)
     feats,groups=_v181_available_features(data)
 
-    # 1月、3月、1年、2年；長期模型降低重訓頻率以改善速度。
+    latest_price=_v181_latest_date(price_df)
+    latest_inst=_v181_latest_date(inst5)
+    latest_margin=_v181_latest_date(margin5)
+    latest_rev=_v181_latest_date(revenue5)
+
+    st.success(
+        f"資料已取得｜股價最新：{latest_price}｜法人：{latest_inst}｜"
+        f"融資融券：{latest_margin}｜月營收：{latest_rev}"
+    )
+
+    # 只訓練兩個真正需要機率的模型，大幅減少等待時間。
     R={}
-    for hz in (20,60,250,500):
-        R[hz]={"up":_v181_walkforward(data,hz,"up")}
+    with st.spinner("AI 正在整理 1個月、3個月趨勢…"):
+        for hz in (20,60):
+            R[hz]={"up":_v181_walkforward(data,hz,"up")}
+
+    # 1年、2年：使用長期價格/營收結構，不硬做遠期機率。
+    trend_1y=_v20_structure_trend(data,250)
+    trend_2y=_v20_structure_trend(data,500)
 
     cols=st.columns(4)
-    for col,hz,title in zip(
-        cols,(20,60,250,500),
-        ("未來約 1 個月","未來約 3 個月","未來約 1 年","未來約 2 年")
-    ):
+    for col,hz,title in zip(cols,(20,60),("未來約 1 個月","未來約 3 個月")):
         up,du=R[hz]["up"]
         with col:
             st.markdown(f"### {title}")
-            if hz>=250 and up is None:
-                trend=_v20_structure_trend(data,hz)
-                st.markdown(f"**{trend}**")
-                st.metric("AI機率","暫不顯示")
-                st.caption("長期模型測試不足，改看長期結構趨勢。")
+            if up is None:
+                st.markdown("**方向暫不明確**")
+                st.metric("AI上漲機會","暫不顯示")
+                st.caption("資料有抓到，但AI過去測試沒有通過可靠度標準。")
             else:
                 st.markdown(f"**{_v181_label(up)}**")
-                if up is None:
-                    st.metric("上漲機會","先不要參考")
-                    st.caption("AI歷史測試還不夠穩定。")
-                else:
-                    st.metric("上漲機會",f"{up*100:.1f}%")
-                    confidence="較高" if du.get("status")=="良好" else "普通"
-                    st.caption(f"可信程度：{confidence}")
+                st.metric("上漲機會",f"{up*100:.1f}%")
+                confidence="較高" if du.get("status")=="良好" else "普通"
+                st.caption(f"可信程度：{confidence}")
+
+    with cols[2]:
+        st.markdown("### 未來約 1 年")
+        st.markdown(f"**{trend_1y}**")
+        st.metric("判斷方式","長期趨勢")
+        st.caption("看約1年的價格趨勢、均線與營收方向。")
+
+    with cols[3]:
+        st.markdown("### 未來約 2 年")
+        st.markdown(f"**{trend_2y}**")
+        st.metric("判斷方式","長期趨勢")
+        st.caption("2年太遠，不硬算假精準機率；改看長期結構。")
 
     p20=R[20]["up"][0]
     p60=R[60]["up"][0]
-    p250=R[250]["up"][0]
-    p500=R[500]["up"][0]
 
     close_s=pd.to_numeric(price_df["close"],errors="coerce").dropna()
     if len(close_s)>=240:
@@ -2739,31 +2765,30 @@ def _v181_render(price_df,sid,token):
         ma240=float(close_s.tail(240).mean())
         bias20=last/ma20-1
 
-        # V20 積極型：方向門檻較敏捷，但不降低模型可信度門檻。
-        medium_bull = (p20 is not None and p20>=.52) or (p60 is not None and p60>=.52)
-        long_bull = (p250 is not None and p250>=.52) or (last>ma240)
+        medium_bull=(p20 is not None and p20>=.52) or (p60 is not None and p60>=.52)
+        structural_bull=(last>ma240 and trend_1y in ("長期偏多","略偏多"))
 
-        if medium_bull and long_bull:
-            hold="偏多格局，可續抱觀察"
+        if medium_bull or structural_bull:
+            hold="整體仍偏多，可續抱觀察"
         elif p20 is not None and p20<.48:
-            hold="短中期轉弱，先提高警覺"
+            hold="短中期轉弱，要提高警覺"
         else:
-            hold="目前仍可觀察，等待方向更明確"
+            hold="目前沒有明顯轉空，可繼續觀察"
 
-        if medium_bull:
+        if medium_bull or structural_bull:
             if bias20>.12:
-                add="方向偏多，但短線漲太快；等拉回比追高好"
+                add="方向偏多，但短線漲太快；等拉回再買比較好"
             elif bias20>.06:
-                add="偏多，可等小幅拉回再找機會"
+                add="仍偏多，可等小幅拉回再找機會"
             else:
-                add="偏多，可留意分批布局機會"
+                add="偏多，可留意分批布局"
         elif p20 is not None and p20<.48:
             add="目前先不要加碼"
         else:
-            add="可以觀察，但先別重押"
+            add="可以觀察，小量分批比一次重押好"
 
         if bias20>.15:
-            risk="短線過熱，拉回風險明顯升高"
+            risk="短線過熱，拉回風險升高"
         elif last<ma60:
             risk="已跌到中期趨勢下方，要注意轉弱"
         else:
@@ -2776,19 +2801,14 @@ def _v181_render(price_df,sid,token):
         c.warning(f"**現在風險**\n\n{risk}")
 
     with st.expander("查看 AI 使用資料與最新日期"):
-        used=["股價／成交量"]
-        if groups.get("法人"): used.append("法人")
-        if groups.get("融資／融券"): used.append("融資／融券")
-        if groups.get("公司月營收"): used.append("月營收")
-        st.write("本次使用："+"、".join(used))
         status_rows=[
-            {"資料":"股價與成交量","最新日期":_v181_latest_date(price_df)},
-            {"資料":"外資／投信／自營商","最新日期":_v181_latest_date(inst5)},
-            {"資料":"融資／融券","最新日期":_v181_latest_date(margin5)},
-            {"資料":"公司月營收","最新日期":_v181_latest_date(revenue5)},
+            {"資料":"股價與成交量","最新日期":latest_price},
+            {"資料":"外資／投信／自營商","最新日期":latest_inst},
+            {"資料":"融資／融券","最新日期":latest_margin},
+            {"資料":"公司月營收","最新日期":latest_rev},
         ]
         st.dataframe(pd.DataFrame(status_rows),use_container_width=True,hide_index=True)
-        st.caption("資料只用到當時已經公開的內容；沒有把未來才知道的資料偷放進模型。")
+        st.caption("顯示的是各資料來源實際最新公布日；遇到週末或休市日，不會硬改成今天日期。")
 
     return R
 
