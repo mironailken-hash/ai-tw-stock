@@ -24,8 +24,8 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V18.3.2"
-APP_RELEASE_TIME = "2026/09/27 14:10:00"
+APP_VERSION = "V19.0"
+APP_RELEASE_TIME = "2026/09/27 14:30:00"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -2369,16 +2369,7 @@ def _v176_color(sig):
     if "偏空" in sig: return "#62d99a"
     return "#b9c6d8"
 
-st.markdown("## 現在的走勢")
-_v176_cols=st.columns(3)
-for _col,_title,_key in zip(_v176_cols,["短線｜1–10交易日","中線｜2–6週","長線｜1–6月"],["short","mid","long"]):
-    _sig,_reason=_v176[_key]
-    _cc=_v176_color(_sig)
-    _col.markdown(f"""<div style="border:1px solid #263b55;border-radius:12px;padding:13px;background:rgba(8,20,35,.72);min-height:108px">
-    <div style="font-size:.74rem;opacity:.70">{_title}</div>
-    <div style="font-size:1.15rem;font-weight:850;color:{_cc};margin:7px 0">{_sig}</div>
-    <div style="font-size:.76rem;opacity:.78">{_reason}</div>
-    </div>""",unsafe_allow_html=True)
+# V19：舊版多週期技術燈號隱藏，避免和未來預測重複／衝突。
 
 # V17.6.5：舊版 V15.3 統一決策中心已移除。
 # 現在由上方 V17.x ACTION CENTER、多空當沖、AI 綜合判斷與多週期趨勢燈號統一呈現。
@@ -2698,113 +2689,115 @@ def _v181_latest_date(df):
     return "日期未知" if z.empty else str(z.max().date())
 
 def _v181_render(price_df,sid,token):
-    st.markdown("## 🔭 AI 幫你看未來走勢")
-    st.caption("分別看未來約 1 週、1 個月、3 個月。只有當 AI 過去的預測表現達到基本標準，才會顯示機率；不夠可靠時會直接提醒你。")
+    st.markdown("## 🔭 AI 幫你看未來")
+    st.caption("重點只看三件事：未來方向、現在適不適合再買、風險高不高。AI 測試不夠穩定時，就直接告訴你先不要參考。")
 
-    # 每次分析都以台灣當天日期抓取最新可取得資料
     end=pd.Timestamp.now(tz="Asia/Taipei").date()
     start=end-timedelta(days=2200)
 
+    # 最新資料；快取 10 分鐘，避免每次畫面操作都重新下載
     inst5=_v181_fetch("TaiwanStockInstitutionalInvestorsBuySell",sid,start,end,token)
     margin5=_v181_fetch("TaiwanStockMarginPurchaseShortSale",sid,start,end,token)
     revenue5=_v181_fetch("TaiwanStockMonthRevenue",sid,start,end,token)
-
-    # 財報先做來源健康檢查；只有存在明確發布日期時，未來版本才可安全納入歷史模型。
     financial5=_v181_fetch("TaiwanStockFinancialStatements",sid,start,end,token)
 
     data=_v181_build_dataset(price_df,inst5,margin5,revenue5)
     feats,groups=_v181_available_features(data)
 
-    # 財報防偷看未來：沒有 release/announcement/publish 欄位就不進模型
-    fin_safe=False
-    if financial5 is not None and not financial5.empty:
-        fin_safe=any(c in financial5.columns for c in ["release_date","announcement_date","publish_date"])
+    # 資料來源改成一行摘要，不再放大表格佔版面
+    used=["股價／成交量"]
+    if groups.get("法人"): used.append("法人")
+    if groups.get("融資／融券"): used.append("融資／融券")
+    if groups.get("公司月營收"): used.append("月營收")
+    st.caption("這次 AI 有參考："+"、".join(used)+"。資料會自動抓到來源目前最新可取得日期。")
 
-    st.markdown("### 這次 AI 有參考哪些資料？")
-    status_rows=[
-        {"資料":"股價與成交量","狀態":"✅ 有參考","更新日期":_v181_latest_date(price_df),"說明":"股價、成交量與近期走勢"},
-        {"資料":"外資／投信／自營商","狀態":"✅ 有參考" if groups["法人"] else "⚠️ 這次沒有使用","更新日期":_v181_latest_date(inst5),"說明":"資料不夠完整時，AI 會自動不用"},
-        {"資料":"融資／融券","狀態":"✅ 有參考" if groups["融資／融券"] else "⚠️ 這次沒有使用","更新日期":_v181_latest_date(margin5),"說明":"觀察融資與融券增加或減少"},
-        {"資料":"公司月營收","狀態":"✅ 有參考" if groups["公司月營收"] else "⚠️ 這次沒有使用","更新日期":_v181_latest_date(revenue5),"說明":"觀察營收比上月、去年同期及成長速度"},
-        {"資料":"公司財報","狀態":"🟡 有資料，但這次先不使用" if (financial5 is not None and not financial5.empty and not fin_safe) else ("✅ 資料時間可確認" if fin_safe else "⚠️ 目前沒有資料"),"更新日期":_v181_latest_date(financial5),"說明":"無法確認當時何時公開，就先不用，避免 AI 誤用未來才知道的資料"},
-    ]
-    st.dataframe(pd.DataFrame(status_rows),use_container_width=True,hide_index=True)
-    st.caption("資料更新說明：每次分析會重新檢查最新可取得資料；資料來源若尚未公布當日資料，會顯示該來源實際最新日期。資料快取最長約 10 分鐘。")
-    st.info(
-        "AI預測怎麼看？：未來機率必須在時間序列樣本外驗證中優於「只猜歷史發生率」的基準模型，"
-        "並通過 Brier 門檻才會顯示。未通過時直接標示資料／模型目前還不夠可靠，不以 94%～100% 的極端數字誤導。"
-    )
-
+    # V19 FAST：只訓練真正影響「未來方向」的 3 個模型。
+    # 舊版同時計算 9 個模型（上漲、漲5%、回撤 × 3週期），頁面會明顯變慢。
     R={}
     for hz in (5,20,60):
-        R[hz]={
-            "up":_v181_walkforward(data,hz,"up"),
-            "plus5":_v181_walkforward(data,hz,"plus5"),
-            "dd8":_v181_walkforward(data,hz,"dd8"),
-        }
+        R[hz]={"up":_v181_walkforward(data,hz,"up")}
 
     cols=st.columns(3)
     for col,hz,title in zip(cols,(5,20,60),("未來約 1 週","未來約 1 個月","未來約 3 個月")):
-        up,du=R[hz]["up"]; p5,dp=R[hz]["plus5"]; dd,dr=R[hz]["dd8"]
+        up,du=R[hz]["up"]
         with col:
             st.markdown(f"### {title}")
-            st.markdown(f"**趨勢：{_v181_label(up)}**")
-            st.metric("未來上漲機會",_v181_pct(up))
-            st.metric("漲超過 5% 的機會",_v181_pct(p5))
-            st.metric("中途跌超過 8% 的風險",_v181_pct(dd))
+            st.markdown(f"**{_v181_label(up)}**")
             if up is None:
-                st.warning("⚠️ 目前這個預測還不夠可靠")
-                st.caption("AI 過去的測試表現還沒有達到我們設定的標準，所以這次不建議參考這個機率。")
+                st.metric("上漲機會","先不要參考")
+                st.caption("AI 過去測試還不夠穩定。")
             else:
-                confidence = "高" if du.get("status") == "良好" else "普通"
-                st.caption(f"AI 可信程度：{confidence}｜這次參考 {len(du['features'])} 項資料")
-            with st.expander("查看 AI 詳細測試資料"):
-                skill_txt = "無法計算" if not np.isfinite(du.get("skill",np.nan)) else f"{du['skill']*100:+.1f}%"
-                st.write(f"歷史測試筆數：{du.get('n',0)}")
-                st.write(f"獨立檢查筆數：{du.get('eval_n',0)}")
-                st.write(f"AI 誤差值（越低越好）：{du.get('brier',np.nan):.3f}" if np.isfinite(du.get('brier',np.nan)) else "AI 誤差值：這次先不要參考")
-                st.write(f"基本比較值：{du.get('baseline_brier',np.nan):.3f}" if np.isfinite(du.get('baseline_brier',np.nan)) else "基本比較值：這次先不要參考")
-                st.write(f"比基本方法進步：{skill_txt}")
+                st.metric("上漲機會",f"{up*100:.1f}%")
+                confidence="較高" if du.get("status")=="良好" else "普通"
+                st.caption(f"AI 可信程度：{confidence}")
 
-    # 持有與加碼分離
-    p20=R[20]["up"][0]; p60=R[60]["up"][0]; dd20=R[20]["dd8"][0]
-    c=pd.to_numeric(price_df["close"],errors="coerce").dropna()
-    if len(c)>=120:
-        last=float(c.iloc[-1]); ma20=float(c.tail(20).mean()); ma60=float(c.tail(60).mean())
+    # 最實用的結論：持有 / 加碼 / 風險
+    p5=R[5]["up"][0]
+    p20=R[20]["up"][0]
+    p60=R[60]["up"][0]
+
+    close_s=pd.to_numeric(price_df["close"],errors="coerce").dropna()
+    if len(close_s)>=120:
+        last=float(close_s.iloc[-1])
+        ma20=float(close_s.tail(20).mean())
+        ma60=float(close_s.tail(60).mean())
         bias20=last/ma20-1
+
         if p20 is not None and p60 is not None and p20>=.55 and p60>=.55 and last>=ma60:
-            hold="目前走勢還沒有明顯轉弱"
+            hold="可以續抱觀察，暫時沒有明顯轉弱"
         elif p20 is not None and p20<=.45:
             hold="走勢開始轉弱，要提高警覺"
         else:
-            hold="方向還不明顯，先觀察"
+            hold="方向還不夠清楚，先觀察"
 
         if p20 is not None and p20>=.58:
-            add="未來仍偏上漲，但現在漲得太快，先不要追高" if bias20>.10 else ("未來仍偏上漲，可以等價格拉回再觀察" if bias20>.05 else "未來偏上漲，可以觀察是否適合分批布局")
+            if bias20>.10:
+                add="先不要追高，等拉回再看"
+            elif bias20>.05:
+                add="偏多，但建議等拉回再看"
+            else:
+                add="偏多，可留意分批布局機會"
         elif p20 is not None and p20<=.45:
-            add="現在先不要再買"
+            add="目前先不要加碼"
         else:
-            add="先不要急著買，等方向更清楚"
+            add="先不要急著加碼"
 
-        risk="未來一個月出現明顯下跌的風險偏高" if dd20 is not None and dd20>=.50 else "目前沒有出現明顯的大跌警示"
-        st.markdown("### 🎯 我現在該怎麼看？")
-        a,b,c3=st.columns(3)
-        a.info(f"**手上有股票怎麼辦？**\n\n{hold}")
-        b.info(f"**現在適合再買嗎？**\n\n{add}")
-        c3.warning(f"**現在要注意什麼？**\n\n{risk}")
-        st.caption(f"20日乖離 {bias20*100:+.1f}%｜MA20 {ma20:.2f}｜MA60 {ma60:.2f}")
+        # 風險用價格乖離與短期/中期方向做簡單白話提醒，不再額外訓練第4~9個模型
+        if bias20>.12:
+            risk="股價短線漲得較快，要注意拉回"
+        elif p5 is not None and p5<=.45:
+            risk="短線偏弱，要注意震盪"
+        else:
+            risk="目前沒有明顯的大跌警示"
+
+        st.markdown("### 🎯 最後看這裡就好")
+        a,b,c=st.columns(3)
+        a.info(f"**手上有股票**\n\n{hold}")
+        b.info(f"**想再買一些**\n\n{add}")
+        c.warning(f"**現在要注意**\n\n{risk}")
+
+    with st.expander("查看這次 AI 使用的資料"):
+        status_rows=[
+            {"資料":"股價與成交量","最新日期":_v181_latest_date(price_df),"使用":"有"},
+            {"資料":"外資／投信／自營商","最新日期":_v181_latest_date(inst5),"使用":"有" if groups.get("法人") else "沒有"},
+            {"資料":"融資／融券","最新日期":_v181_latest_date(margin5),"使用":"有" if groups.get("融資／融券") else "沒有"},
+            {"資料":"公司月營收","最新日期":_v181_latest_date(revenue5),"使用":"有" if groups.get("公司月營收") else "沒有"},
+            {"資料":"公司財報","最新日期":_v181_latest_date(financial5),"使用":"暫不使用"},
+        ]
+        st.dataframe(pd.DataFrame(status_rows),use_container_width=True,hide_index=True)
+        st.caption("財報目前先不放進歷史模型，避免把當時還沒公布的資料誤當成已知資料。")
 
     return R
 
 _v181_results=_v181_render(price,sid,token)
 
 
-st.markdown("### 關鍵價位")
+st.markdown("### 重要價位")
 a,b,c,e=st.columns(4)
-a.metric("20日支撐",f"{support:.2f}")
-b.metric("20日壓力",f"{resistance:.2f}")
-c.metric("60日支撐",f"{support60:.2f}")
-e.metric("60日壓力",f"{resistance60:.2f}")
+a.metric("近期支撐",f"{support:.2f}")
+b.metric("近期壓力",f"{resistance:.2f}")
+c.metric("中期支撐",f"{support60:.2f}")
+e.metric("中期壓力",f"{resistance60:.2f}")
 
 if own=="已持有" and cost>0:
     st.markdown("### 我的持股")
@@ -2816,23 +2809,11 @@ if own=="已持有" and cost>0:
 # =========================
 # 專業資訊總覽（全部攤開，不使用下拉展開）
 # =========================
-st.markdown("### AI 模型面板")
-st.markdown(f"""<div class="panel">
-<div class="kicker">MODEL CONSENSUS</div>
-<div style="font-size:26px;font-weight:900">{overall_icon} AI 綜合判斷｜{overall_label}</div>
-</div>""",unsafe_allow_html=True)
-models=[("技術面因素",tech),("法人籌碼因素",inst_score),("市場環境因素",heat),("風險因素",100-risk)]
-mc=st.columns(4)
-for col,(title,score) in zip(mc,models):
-    lab,ico=trend_label(score)
-    with col:
-        st.markdown(f"""<div class="panel"><div class="kicker">{title}</div>
-        <div style="font-size:25px;font-weight:900">{ico} {lab}</div></div>""",unsafe_allow_html=True)
-
+# V19：移除重複的 AI 模型面板，只保留價格走勢圖。
 st.markdown("""
 <div class="section-pro">
-  <div class="section-pro-title">📈 價格趨勢</div>
-  <div class="section-pro-sub">K線趨勢與均線結構｜掌握價格方向與波動變化</div>
+  <div class="section-pro-title">📈 最近價格走勢</div>
+  <div class="section-pro-sub">看股價最近是往上、往下，還是震盪</div>
 </div>
 """, unsafe_allow_html=True)
 chart_df = d.tail(120).copy()
