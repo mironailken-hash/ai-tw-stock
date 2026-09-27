@@ -24,8 +24,8 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V19.0"
-APP_RELEASE_TIME = "2026/09/27 14:30:00"
+APP_VERSION = "V20.0"
+APP_RELEASE_TIME = "2026/09/27 14:55:00"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -1788,7 +1788,7 @@ if not sid:
     st.stop()
 
 today=date.today()
-price=fm("TaiwanStockPrice",sid,today-timedelta(days=1825),today,token)
+price=fm("TaiwanStockPrice",sid,today-timedelta(days=4380),today,token)
 
 # V13.5: probability model requires multi-year history; short partial data is also backfilled.
 if price is None or price.empty or len(price) < 520:
@@ -2180,51 +2180,8 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ===== V8 全市場資料引擎 =====
-_v8_status="可產生機率" if _v8_prob_ok else "這次先不要參考・暫停機率判斷"
-_v8_status_icon="🟢" if _v8_prob_ok else "⚠️"
-_pc_txt=(f"成交量 P/C {_v8_pc['vol_pc']:.2f}%｜未平倉 P/C {_v8_pc['oi_pc']:.2f}%" if _v8_pc else "尚未取得")
-_tx_txt=(f"外資臺指期未平倉淨額 {int(_v8_tx['net_oi']):,} 口" if _v8_tx else "尚未取得")
-_mg_txt=("已取得" if _v8_margin else "尚未取得")
-_ld_txt=("已取得" if _v8_lending else "尚未取得")
-st.markdown(f"""
-<div class="v8-data-card">
- <div class="kicker">MARKET DATA｜市場資料</div>
- <div class="v8-data-title">{_v8_status_icon} {_v8_status}</div>
- <div class="v6-meta">資料狀態 {("完整" if _v8_complete>=0.85 else ("部分缺失" if _v8_complete>=0.55 else "不足"))}｜缺少必要資料：{("、".join(_v8_missing) if _v8_missing else "無")}</div>
- <div class="v8-grid">
-   <div><b>臺指選擇權</b><br>{_pc_txt}</div>
-   <div><b>臺指期外資</b><br>{_tx_txt}</div>
-   <div><b>融資／融券</b><br>{_mg_txt}</div>
-   <div><b>借券資料</b><br>{_ld_txt}</div>
- </div>
-</div>
-""",unsafe_allow_html=True)
-
-# ===== V7 全球事件情報 =====
-_event_icon = "🚨" if _v7_event["risk"]=="重大事件影響" else ("⚠️" if _v7_event["risk"]=="事件影響中等" else "🌐")
-st.markdown(f"""
-<div class="v7-event-card">
- <div class="kicker">GLOBAL EVENTS｜全球重大事件</div>
- <div class="v7-event-title">{_event_icon} {_v7_event["risk"]}</div>
- <div class="v6-meta">已掃描台灣/國際新聞；與個股或重大市場事件相關 {_v7_event["related"]} 則｜
- 事件偏多指標 {_v7_event["positive"]}｜偏空指標 {_v7_event["negative"]}</div>
- <div class="v7-beta">波段方向判讀 {_v8_swing_up_txt}｜盤中空方風險 {_v8_swing_down_txt}</div>
-</div>
-""", unsafe_allow_html=True)
-
-if _v7_event["items"]:
-    with st.expander("查看影響模型的台灣／國際重大新聞", expanded=False):
-        for _x in _v7_event["items"]:
-            _src = _x.get("source","")
-            _tone = _x.get("tone","待確認")
-            if _x.get("link"):
-                st.markdown(f"- **[{_tone}]** [{_x['title']}]({_x['link']})  `{_src}`")
-            else:
-                st.markdown(f"- **[{_tone}]** {_x['title']}  `{_src}`")
-        st.caption("新聞標題只作事件偵測與市場情緒輸入；重大事件仍應以公司、交易所、政府或可信媒體原始資訊確認。")
-
-
+# ===== V20 後台資料 =====
+# 大盤衍生資料、全球事件仍在前段完成計算，供模型使用；前台不再重複顯示。
 # V15.2: ACTION CENTER moved to top; original duplicate removed.
 
 
@@ -2476,9 +2433,9 @@ def _v181_build_dataset(price_df, inst_df, margin_df, revenue_df):
     v=_v181_num(x[vc]) if vc else pd.Series(np.nan,index=x.index)
     ret=c.pct_change()
 
-    for n in (1,5,10,20,60,120):
+    for n in (1,5,10,20,60,120,240,500):
         x[f"ret_{n}"]=c.pct_change(n)
-    for n in (5,10,20,60,120):
+    for n in (5,10,20,60,120,240):
         x[f"ma_bias_{n}"]=c/c.rolling(n).mean()-1
 
     x["volatility_20"]=ret.rolling(20).std()
@@ -2488,6 +2445,8 @@ def _v181_build_dataset(price_df, inst_df, margin_df, revenue_df):
     x["volume_ratio_60"]=v/v.rolling(60).mean()
     x["trend_slope_20"]=(c-c.shift(20))/(20*c.replace(0,np.nan))
     x["trend_slope_60"]=(c-c.shift(60))/(60*c.replace(0,np.nan))
+    x["trend_slope_120"]=(c-c.shift(120))/(120*c.replace(0,np.nan))
+    x["trend_slope_240"]=(c-c.shift(240))/(240*c.replace(0,np.nan))
 
     # 只做向後 as-of 合併：某交易日只能看到當時已存在的資料
     for extra in (_v181_daily_institution(inst_df),
@@ -2498,19 +2457,20 @@ def _v181_build_dataset(price_df, inst_df, margin_df, revenue_df):
             x=pd.merge_asof(x.sort_values("date"),extra,on="date",direction="backward")
 
     # 未來標籤
-    for hz in (5,20,60):
+    for hz in (5,20,60,250,500):
         fwd=c.shift(-hz)/c-1
         x[f"target_up_{hz}"]=(fwd>0).where(fwd.notna())
-        x[f"target_plus5_{hz}"]=(fwd>.05).where(fwd.notna())
-        future_min=pd.concat([c.shift(-k) for k in range(1,hz+1)],axis=1).min(axis=1)
-        x[f"target_dd8_{hz}"]=((future_min/c-1)<=-.08).where(c.shift(-hz).notna())
+        if hz <= 60:
+            x[f"target_plus5_{hz}"]=(fwd>.05).where(fwd.notna())
+            future_min=pd.concat([c.shift(-k) for k in range(1,hz+1)],axis=1).min(axis=1)
+            x[f"target_dd8_{hz}"]=((future_min/c-1)<=-.08).where(c.shift(-hz).notna())
     return x
 
 _V181_PRICE_FEATURES=[
-    "ret_1","ret_5","ret_10","ret_20","ret_60","ret_120",
-    "ma_bias_5","ma_bias_10","ma_bias_20","ma_bias_60","ma_bias_120",
+    "ret_1","ret_5","ret_10","ret_20","ret_60","ret_120","ret_240","ret_500",
+    "ma_bias_5","ma_bias_10","ma_bias_20","ma_bias_60","ma_bias_120","ma_bias_240",
     "volatility_20","volatility_60","range_20",
-    "volume_ratio_20","volume_ratio_60","trend_slope_20","trend_slope_60"
+    "volume_ratio_20","volume_ratio_60","trend_slope_20","trend_slope_60","trend_slope_120","trend_slope_240"
 ]
 _V181_OPTIONAL_FEATURES=[
     "inst_net_5","inst_net_20","inst_strength_20",
@@ -2562,8 +2522,9 @@ def _v181_walkforward(data,hz,kind="up"):
             train[c]=pd.to_numeric(train[c],errors="coerce").replace([np.inf,-np.inf],np.nan)
     train=train.dropna(subset=feats+[target])
 
-    if len(train)<360:
-        diag["reason"]=f"可訓練樣本 {len(train)} 筆，V18.2 至少需 360 筆"
+    min_train = 900 if hz >= 500 else (700 if hz >= 250 else 360)
+    if len(train)<min_train:
+        diag["reason"]=f"可訓練樣本 {len(train)} 筆，至少需 {min_train} 筆"
         return None,diag
     if train[target].nunique()<2:
         diag["reason"]="歷史目標只有單一類別"
@@ -2572,7 +2533,8 @@ def _v181_walkforward(data,hz,kind="up"):
     # Walk-forward OOS
     start=max(240,int(len(train)*.50))
     raw_probs=[]; actual=[]
-    for i in range(start,len(train),20):
+    step = 60 if hz >= 250 else 20
+    for i in range(start,len(train),step):
         tr=train.iloc[:i]
         te=train.iloc[i:min(i+20,len(train))]
         if te.empty or tr[target].nunique()<2:
@@ -2585,8 +2547,9 @@ def _v181_walkforward(data,hz,kind="up"):
         raw_probs.extend(model.predict_proba(te[feats])[:,1].tolist())
         actual.extend(te[target].astype(int).tolist())
 
-    if len(actual)<120:
-        diag["reason"]=f"Walk-forward OOS 僅 {len(actual)} 筆，V18.2 至少需 120 筆"
+    min_oos = 60 if hz >= 250 else 120
+    if len(actual)<min_oos:
+        diag["reason"]=f"歷史測試樣本僅 {len(actual)} 筆，至少需 {min_oos} 筆"
         return None,diag
 
     raw=np.clip(np.asarray(raw_probs,dtype=float),0.001,0.999)
@@ -2671,12 +2634,12 @@ def _v181_walkforward(data,hz,kind="up"):
     return calibrated,diag
 
 def _v181_label(p):
-    if p is None: return "目前方向還看不清楚"
-    if p>=.65: return "未來看漲"
-    if p>=.55: return "比較有機會上漲"
-    if p<=.35: return "未來看跌"
-    if p<=.45: return "比較有可能下跌"
-    return "方向還不明顯"
+    if p is None: return "AI機率暫不採用"
+    if p>=.60: return "看漲"
+    if p>=.52: return "偏多"
+    if p<=.40: return "看跌"
+    if p<=.48: return "偏空"
+    return "震盪"
 
 def _v181_pct(p):
     return "這次先不要參考" if p is None else f"{p*100:.1f}%"
@@ -2688,104 +2651,144 @@ def _v181_latest_date(df):
     z=pd.to_datetime(df[dc],errors="coerce").dropna()
     return "日期未知" if z.empty else str(z.max().date())
 
+def _v20_structure_trend(data, horizon):
+    """Long-term structural trend fallback. This is a trend score, not a probability."""
+    try:
+        r=data.iloc[-1]
+        score=0
+        if horizon==250:
+            tests=[
+                ("ma_bias_120",0),("ma_bias_240",0),
+                ("ret_120",0),("ret_240",0),
+                ("trend_slope_120",0),("trend_slope_240",0),
+            ]
+        else:
+            tests=[
+                ("ma_bias_240",0),("ret_240",0),("ret_500",0),
+                ("trend_slope_120",0),("trend_slope_240",0),
+            ]
+        for k,t in tests:
+            v=pd.to_numeric(pd.Series([r.get(k,np.nan)]),errors="coerce").iloc[0]
+            if pd.notna(v):
+                score += 1 if v>t else -1
+        for k in ("revenue_yoy","revenue_yoy_accel"):
+            if k in data.columns:
+                v=pd.to_numeric(pd.Series([r.get(k,np.nan)]),errors="coerce").iloc[0]
+                if pd.notna(v):
+                    score += 1 if v>0 else -1
+        if score>=4: return "長期偏多"
+        if score>=1: return "略偏多"
+        if score<=-4: return "長期偏空"
+        if score<=-1: return "略偏空"
+        return "長期震盪"
+    except Exception:
+        return "資料不足"
+
 def _v181_render(price_df,sid,token):
-    st.markdown("## 🔭 AI 幫你看未來")
-    st.caption("重點只看三件事：未來方向、現在適不適合再買、風險高不高。AI 測試不夠穩定時，就直接告訴你先不要參考。")
+    st.markdown("## 🔭 AI 看未來")
+    st.caption("主頁只保留最重要的方向。1年、2年屬長期趨勢估計，不代表股價一定會照這個方向走。")
 
     end=pd.Timestamp.now(tz="Asia/Taipei").date()
-    start=end-timedelta(days=2200)
+    start=end-timedelta(days=4380)
 
-    # 最新資料；快取 10 分鐘，避免每次畫面操作都重新下載
     inst5=_v181_fetch("TaiwanStockInstitutionalInvestorsBuySell",sid,start,end,token)
     margin5=_v181_fetch("TaiwanStockMarginPurchaseShortSale",sid,start,end,token)
     revenue5=_v181_fetch("TaiwanStockMonthRevenue",sid,start,end,token)
-    financial5=_v181_fetch("TaiwanStockFinancialStatements",sid,start,end,token)
 
     data=_v181_build_dataset(price_df,inst5,margin5,revenue5)
     feats,groups=_v181_available_features(data)
 
-    # 資料來源改成一行摘要，不再放大表格佔版面
-    used=["股價／成交量"]
-    if groups.get("法人"): used.append("法人")
-    if groups.get("融資／融券"): used.append("融資／融券")
-    if groups.get("公司月營收"): used.append("月營收")
-    st.caption("這次 AI 有參考："+"、".join(used)+"。資料會自動抓到來源目前最新可取得日期。")
-
-    # V19 FAST：只訓練真正影響「未來方向」的 3 個模型。
-    # 舊版同時計算 9 個模型（上漲、漲5%、回撤 × 3週期），頁面會明顯變慢。
+    # 1月、3月、1年、2年；長期模型降低重訓頻率以改善速度。
     R={}
-    for hz in (5,20,60):
+    for hz in (20,60,250,500):
         R[hz]={"up":_v181_walkforward(data,hz,"up")}
 
-    cols=st.columns(3)
-    for col,hz,title in zip(cols,(5,20,60),("未來約 1 週","未來約 1 個月","未來約 3 個月")):
+    cols=st.columns(4)
+    for col,hz,title in zip(
+        cols,(20,60,250,500),
+        ("未來約 1 個月","未來約 3 個月","未來約 1 年","未來約 2 年")
+    ):
         up,du=R[hz]["up"]
         with col:
             st.markdown(f"### {title}")
-            st.markdown(f"**{_v181_label(up)}**")
-            if up is None:
-                st.metric("上漲機會","先不要參考")
-                st.caption("AI 過去測試還不夠穩定。")
+            if hz>=250 and up is None:
+                trend=_v20_structure_trend(data,hz)
+                st.markdown(f"**{trend}**")
+                st.metric("AI機率","暫不顯示")
+                st.caption("長期模型測試不足，改看長期結構趨勢。")
             else:
-                st.metric("上漲機會",f"{up*100:.1f}%")
-                confidence="較高" if du.get("status")=="良好" else "普通"
-                st.caption(f"AI 可信程度：{confidence}")
+                st.markdown(f"**{_v181_label(up)}**")
+                if up is None:
+                    st.metric("上漲機會","先不要參考")
+                    st.caption("AI歷史測試還不夠穩定。")
+                else:
+                    st.metric("上漲機會",f"{up*100:.1f}%")
+                    confidence="較高" if du.get("status")=="良好" else "普通"
+                    st.caption(f"可信程度：{confidence}")
 
-    # 最實用的結論：持有 / 加碼 / 風險
-    p5=R[5]["up"][0]
     p20=R[20]["up"][0]
     p60=R[60]["up"][0]
+    p250=R[250]["up"][0]
+    p500=R[500]["up"][0]
 
     close_s=pd.to_numeric(price_df["close"],errors="coerce").dropna()
-    if len(close_s)>=120:
+    if len(close_s)>=240:
         last=float(close_s.iloc[-1])
         ma20=float(close_s.tail(20).mean())
         ma60=float(close_s.tail(60).mean())
+        ma240=float(close_s.tail(240).mean())
         bias20=last/ma20-1
 
-        if p20 is not None and p60 is not None and p20>=.55 and p60>=.55 and last>=ma60:
-            hold="可以續抱觀察，暫時沒有明顯轉弱"
-        elif p20 is not None and p20<=.45:
-            hold="走勢開始轉弱，要提高警覺"
-        else:
-            hold="方向還不夠清楚，先觀察"
+        # V20 積極型：方向門檻較敏捷，但不降低模型可信度門檻。
+        medium_bull = (p20 is not None and p20>=.52) or (p60 is not None and p60>=.52)
+        long_bull = (p250 is not None and p250>=.52) or (last>ma240)
 
-        if p20 is not None and p20>=.58:
-            if bias20>.10:
-                add="先不要追高，等拉回再看"
-            elif bias20>.05:
-                add="偏多，但建議等拉回再看"
+        if medium_bull and long_bull:
+            hold="偏多格局，可續抱觀察"
+        elif p20 is not None and p20<.48:
+            hold="短中期轉弱，先提高警覺"
+        else:
+            hold="目前仍可觀察，等待方向更明確"
+
+        if medium_bull:
+            if bias20>.12:
+                add="方向偏多，但短線漲太快；等拉回比追高好"
+            elif bias20>.06:
+                add="偏多，可等小幅拉回再找機會"
             else:
                 add="偏多，可留意分批布局機會"
-        elif p20 is not None and p20<=.45:
+        elif p20 is not None and p20<.48:
             add="目前先不要加碼"
         else:
-            add="先不要急著加碼"
+            add="可以觀察，但先別重押"
 
-        # 風險用價格乖離與短期/中期方向做簡單白話提醒，不再額外訓練第4~9個模型
-        if bias20>.12:
-            risk="股價短線漲得較快，要注意拉回"
-        elif p5 is not None and p5<=.45:
-            risk="短線偏弱，要注意震盪"
+        if bias20>.15:
+            risk="短線過熱，拉回風險明顯升高"
+        elif last<ma60:
+            risk="已跌到中期趨勢下方，要注意轉弱"
         else:
-            risk="目前沒有明顯的大跌警示"
+            risk="目前沒有明顯轉空訊號"
 
-        st.markdown("### 🎯 最後看這裡就好")
+        st.markdown("### 🎯 直接看結論")
         a,b,c=st.columns(3)
         a.info(f"**手上有股票**\n\n{hold}")
-        b.info(f"**想再買一些**\n\n{add}")
-        c.warning(f"**現在要注意**\n\n{risk}")
+        b.info(f"**想繼續買**\n\n{add}")
+        c.warning(f"**現在風險**\n\n{risk}")
 
-    with st.expander("查看這次 AI 使用的資料"):
+    with st.expander("查看 AI 使用資料與最新日期"):
+        used=["股價／成交量"]
+        if groups.get("法人"): used.append("法人")
+        if groups.get("融資／融券"): used.append("融資／融券")
+        if groups.get("公司月營收"): used.append("月營收")
+        st.write("本次使用："+"、".join(used))
         status_rows=[
-            {"資料":"股價與成交量","最新日期":_v181_latest_date(price_df),"使用":"有"},
-            {"資料":"外資／投信／自營商","最新日期":_v181_latest_date(inst5),"使用":"有" if groups.get("法人") else "沒有"},
-            {"資料":"融資／融券","最新日期":_v181_latest_date(margin5),"使用":"有" if groups.get("融資／融券") else "沒有"},
-            {"資料":"公司月營收","最新日期":_v181_latest_date(revenue5),"使用":"有" if groups.get("公司月營收") else "沒有"},
-            {"資料":"公司財報","最新日期":_v181_latest_date(financial5),"使用":"暫不使用"},
+            {"資料":"股價與成交量","最新日期":_v181_latest_date(price_df)},
+            {"資料":"外資／投信／自營商","最新日期":_v181_latest_date(inst5)},
+            {"資料":"融資／融券","最新日期":_v181_latest_date(margin5)},
+            {"資料":"公司月營收","最新日期":_v181_latest_date(revenue5)},
         ]
         st.dataframe(pd.DataFrame(status_rows),use_container_width=True,hide_index=True)
-        st.caption("財報目前先不放進歷史模型，避免把當時還沒公布的資料誤當成已知資料。")
+        st.caption("資料只用到當時已經公開的內容；沒有把未來才知道的資料偷放進模型。")
 
     return R
 
@@ -2813,14 +2816,13 @@ if own=="已持有" and cost>0:
 st.markdown("""
 <div class="section-pro">
   <div class="section-pro-title">📈 最近價格走勢</div>
-  <div class="section-pro-sub">看股價最近是往上、往下，還是震盪</div>
+  <div class="section-pro-sub">顯示約 2 年走勢，方便對照長期方向</div>
 </div>
 """, unsafe_allow_html=True)
-chart_df = d.tail(120).copy()
+chart_df = d.tail(520).copy()
 fig = go.Figure()
 line_defs = [
     ("close", "收盤價", "#F2C94C", 3.0),
-    ("MA5", "MA5", "#52B6FF", 1.8),
     ("MA20", "MA20", "#2F80ED", 1.8),
     ("MA60", "MA60", "#EB5757", 1.8),
 ]
@@ -2845,81 +2847,8 @@ fig.update_layout(
 )
 st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
-st.markdown("""
-<div class="section-pro">
-  <div class="section-pro-title">▥ 法人籌碼因素</div>
-  <div class="section-pro-sub">外資・投信・自營商｜觀察近期資金方向</div>
-</div>
-""", unsafe_allow_html=True)
-st.markdown(f"""<div class="panel"><div class="kicker">INSTITUTIONAL FLOW</div>
-<div style="font-size:23px;font-weight:900">近 5 日法人代理淨額：{inst_net:,.0f}</div></div>""",unsafe_allow_html=True)
-if not inst.empty:
-    inst_show=inst.copy()
-    if "name" in inst_show.columns:
-        inst_show["name"]=inst_show["name"].map(zh_institution_name)
-        inst_show=inst_show.rename(columns={"name":"法人名稱"})
-    inst_show=inst_show.rename(columns={"date":"日期","buy":"買進","sell":"賣出"})
-    wanted=[x for x in ["日期","法人名稱","買進","賣出"] if x in inst_show.columns]
-    table_df = (inst_show[wanted].tail(20) if wanted else inst_show.tail(20)).copy()
-
-# 數值欄位格式與淨額
-for col in ["買進","賣出"]:
-    # V13.4: institutional table defensive initialization
-    if "table_df" not in locals() or table_df is None:
-        table_df = inst.copy() if "inst" in locals() and isinstance(inst, pd.DataFrame) else pd.DataFrame()
-    if col in table_df.columns:
-        table_df[col] = pd.to_numeric(table_df[col], errors="coerce").fillna(0)
-
-if "買進" in table_df.columns and "賣出" in table_df.columns:
-    table_df["淨買賣"] = table_df["買進"] - table_df["賣出"]
-
-def money_cell(v, net=False):
-    try:
-        v=float(v)
-        if net:
-            cls="tw-red" if v>0 else "tw-green" if v<0 else "muted"
-            sign="+" if v>0 else ""
-            return f'<span class="{cls}">{sign}{v:,.0f}</span>'
-        return f'{v:,.0f}'
-    except Exception:
-        return str(v)
-
-headers = "".join(f"<th>{c}</th>" for c in table_df.columns)
-rows = []
-for _, rr in table_df.iterrows():
-    cells=[]
-    for c in table_df.columns:
-        val=rr[c]
-        if c=="淨買賣":
-            shown=money_cell(val, True)
-        elif c in ["買進","賣出"]:
-            shown=money_cell(val)
-        else:
-            shown=str(val)
-        cells.append(f"<td>{shown}</td>")
-    rows.append("<tr>"+"".join(cells)+"</tr>")
-
-dark_table = f"""
-<div class="inst-table-wrap">
-<table class="inst-table">
-<thead><tr>{headers}</tr></thead>
-<tbody>{''.join(rows)}</tbody>
-</table>
-</div>
-"""
-st.markdown(dark_table, unsafe_allow_html=True)
-
-st.markdown("### 券商公開研究")
-research_items=broker_research(sid,name,8)
-if research_items:
-    for item in research_items:
-        st.markdown(f"- **{item['broker']}**｜[{item['title']}]({item['link']})")
-else:
-    st.caption("目前未找到與此個股直接相關的近期公開券商研究索引。一般新聞不列入，避免資訊雜訊。")
-
-
-
-st.warning("「可買進／等待買進／觀望／減碼警戒／賣出」為程式依最新取得或最新交易日市場資料計算的模型訊號，不是保證獲利或個人化投資指示；盤中行情與券商公開研究可能有延遲或資料缺漏。")
+# V20：三大法人明細與券商研究移到後台，不在主頁攤開。
+# inst / inst_net 仍保留供模型與內部判斷使用。
 # ===== V15.6：個股近15日新聞 =====
 @st.cache_data(ttl=900, show_spinner=False)
 def _v156_stock_news(stock_id, stock_name, days=15, limit=12):
@@ -4342,7 +4271,8 @@ if _v167_master_long is None:
     except Exception:
         pass
 
-with _v165_trade_decision_slot.container():
+# V20：多空／當沖舊面板改為後台計算，不再前台顯示。
+if False:
     _v164_panel(_v164_df,_v164_q,_v164_p1,_v164_p5,_v164_inst,_v167_master_long)
 
 
