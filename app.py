@@ -23,7 +23,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V18.1"
+APP_VERSION = "V18.1.1"
 APP_RELEASE_TIME = "2026/09/27 13:44:58"
 from urllib.parse import quote
 
@@ -2530,11 +2530,14 @@ def _v181_available_features(data):
     feats=list(_V181_PRICE_FEATURES)
     used_groups={"價量":True,"法人":False,"融資融券":False,"月營收":False}
     for c in _V181_OPTIONAL_FEATURES:
-        if c in data.columns and data[c].notna().sum()>=120:
-            feats.append(c)
-            if c.startswith("inst_"): used_groups["法人"]=True
-            elif c.startswith("margin_") or c.startswith("short_"): used_groups["融資融券"]=True
-            elif c.startswith("revenue_"): used_groups["月營收"]=True
+        if c in data.columns:
+            # V18.1.1：只計算有限數值，避免 inf / -inf 被誤認為有效資料
+            finite=pd.to_numeric(data[c],errors="coerce").replace([np.inf,-np.inf],np.nan)
+            if finite.notna().sum()>=120:
+                feats.append(c)
+                if c.startswith("inst_"): used_groups["法人"]=True
+                elif c.startswith("margin_") or c.startswith("short_"): used_groups["融資融券"]=True
+                elif c.startswith("revenue_"): used_groups["月營收"]=True
     return feats,used_groups
 
 def _v181_walkforward(data,hz,kind="up"):
@@ -2546,10 +2549,13 @@ def _v181_walkforward(data,hz,kind="up"):
     feats,groups=_v181_available_features(data)
     diag["features"]=feats
     diag["groups"]=groups
-    train=data.iloc[:-hz].dropna(subset=_V181_PRICE_FEATURES+[target]).copy()
+    train=data.iloc[:-hz].copy()
 
-    # Optional features are never imputed with fake neutral values.
-    # A feature is used only if enough real observations exist; rows lacking an actually-used feature are dropped.
+    # V18.1.1：模型只接受有限數值。pct_change / 比率在分母為 0 時可能產生 inf，
+    # StandardScaler 會因此直接 ValueError；統一轉 NaN 後再排除，不用假值補資料。
+    for _c in set(feats + [target]):
+        if _c in train.columns:
+            train[_c]=pd.to_numeric(train[_c],errors="coerce").replace([np.inf,-np.inf],np.nan)
     train=train.dropna(subset=feats+[target])
     if len(train)<300:
         diag["reason"]=f"可訓練樣本 {len(train)} 筆，至少需 300 筆"
@@ -2583,7 +2589,8 @@ def _v181_walkforward(data,hz,kind="up"):
     ])
     final.fit(train[feats],train[target].astype(int))
 
-    latest=data.iloc[[-1]][feats]
+    latest=data.iloc[[-1]][feats].copy()
+    latest=latest.apply(pd.to_numeric,errors="coerce").replace([np.inf,-np.inf],np.nan)
     if latest.isna().any(axis=None):
         diag["reason"]="最新一期某項實際使用資料尚未更新，因此不產生假機率"
         return None,diag
