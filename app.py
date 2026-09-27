@@ -24,8 +24,8 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V20.1"
-APP_RELEASE_TIME = "2026/09/27 15:20:00"
+APP_VERSION = "V21.0"
+APP_RELEASE_TIME = "2026/09/27 15:45:00"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -2692,7 +2692,7 @@ def _v20_structure_trend(data, horizon):
 
 def _v181_render(price_df,sid,token):
     st.markdown("## 🔭 AI 看未來")
-    st.caption("資料先抓好，再做判斷。1個月、3個月用AI歷史測試；1年、2年改看長期結構，速度會快很多。")
+    st.caption("短中期看 AI 歷史測試；1年、2年看長期結構。主頁只留方向、買點與風險。")
 
     end=pd.Timestamp.now(tz="Asia/Taipei").date()
     # 法人／融資只抓近 5 年，避免每次載入 12 年逐日資料。
@@ -2813,6 +2813,49 @@ def _v181_render(price_df,sid,token):
     return R
 
 _v181_results=_v181_render(price,sid,token)
+
+# ===== V21 金融研究團隊：前台只顯示精簡總結，詳細因子留在摺疊區 =====
+def _v21_research_team_summary(price_df):
+    try:
+        c=pd.to_numeric(price_df["close"],errors="coerce").dropna()
+        v=pd.to_numeric(price_df.get("Trading_Volume",price_df.get("volume",pd.Series(dtype=float))),errors="coerce").dropna()
+        if len(c)<60:
+            return None
+        last=float(c.iloc[-1])
+        ma20=float(c.tail(20).mean())
+        ma60=float(c.tail(60).mean())
+        ret20=(last/float(c.iloc[-21])-1) if len(c)>=21 and float(c.iloc[-21])!=0 else np.nan
+        ret60=(last/float(c.iloc[-61])-1) if len(c)>=61 and float(c.iloc[-61])!=0 else np.nan
+        vol_hot=np.nan
+        if len(v)>=60 and float(v.tail(60).mean())>0:
+            vol_hot=float(v.tail(20).mean()/v.tail(60).mean())
+        attention="普通"
+        if pd.notna(vol_hot):
+            if vol_hot>=1.8: attention="非常高"
+            elif vol_hot>=1.25: attention="高"
+            elif vol_hot<0.65: attention="低"
+        trend="震盪"
+        if last>ma20>ma60 and (pd.isna(ret60) or ret60>0): trend="偏多"
+        elif last<ma20<ma60 and (pd.isna(ret60) or ret60<0): trend="偏空"
+        return {"trend":trend,"attention":attention,"ret20":ret20,"ret60":ret60,"vol_hot":vol_hot}
+    except Exception:
+        return None
+
+_v21_team=_v21_research_team_summary(price)
+if _v21_team:
+    st.markdown("### 🧠 金融研究團隊總結")
+    _a,_b,_c=st.columns(3)
+    _a.metric("目前趨勢",_v21_team["trend"])
+    _b.metric("市場關注",_v21_team["attention"])
+    _c.metric("近20日走勢",f'{_v21_team["ret20"]*100:+.1f}%' if pd.notna(_v21_team["ret20"]) else "—")
+    with st.expander("研究團隊後台參考項目"):
+        st.write("**技術分析**：股價、成交量、均線、動能、波動。")
+        st.write("**籌碼分析**：外資／投信／自營商、融資融券。")
+        st.write("**基本面**：月營收已納入；完整財報因公布日期對齊問題，目前保守留在後台，不直接灌入歷史模型。")
+        st.write("**長期分析**：1年、2年使用長期價格結構與營收方向，不硬做假精準機率。")
+        st.write("**市場關注**：目前先用成交量熱度判斷；新聞、搜尋熱度、產業供應鏈與全球總經資料會在後續資料層擴充。")
+        st.caption("這些因子主要在後台工作，避免主頁重複、互相衝突。")
+
 
 
 st.markdown("### 重要價位")
