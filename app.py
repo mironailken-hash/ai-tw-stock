@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V25.1"
+APP_VERSION = "V26.0"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -2714,20 +2714,6 @@ def _v181_render(price_df,sid,token):
         for hz in (1,3,5,10,20,60):
             R[hz]={"up":_v181_walkforward(data,hz,"up")}
 
-    def _interp_prob(day):
-        anchors={d:R[d]["up"][0] for d in (1,3,5,10)}
-        if day in anchors:
-            return anchors[day],False
-        pts=[d for d in (1,3,5,10) if anchors[d] is not None]
-        if not pts:
-            return None,True
-        lo=max([d for d in pts if d<day],default=None)
-        hi=min([d for d in pts if d>day],default=None)
-        if lo is None: return anchors[hi],True
-        if hi is None: return anchors[lo],True
-        p=anchors[lo]+(anchors[hi]-anchors[lo])*(day-lo)/(hi-lo)
-        return float(p),True
-
     st.markdown("### 短線方向")
     # V25.0.1：直接由已完成驗證的 R 建立短線結果，避免引用舊版區間推估函式內的區域變數。
     anchors={day:R.get(day,{}).get("up",(None,{}))[0] for day in (1,3,5,10)}
@@ -2840,6 +2826,17 @@ def _v22_team(price_df):
 _v22=_v22_team(price)
 if _v22:
     with st.expander("研究資料｜需要時再看"):
+        try:
+            _health=[]
+            for _hz,_label in ((1,"1日"),(3,"3日"),(5,"5日"),(10,"10日"),(20,"1月"),(60,"3月")):
+                _p,_du=R.get(_hz,{}).get("up",(None,{})) if "R" in locals() else (None,{})
+                _status=str((_du or {}).get("status",""))
+                if _p is not None:
+                    _health.append(f"{_label} {_status or '通過'}")
+            if _health:
+                st.caption("模型可靠度｜"+" ・ ".join(_health))
+        except Exception:
+            pass
         st.caption(f"技術 {_v22['tech']} ｜ 動能 {_v22['momentum']} ｜ 熱度 {_v22['attention']} ｜ 長線 {_v22['longterm']}")
         st.caption("參考價格、成交量、均線、法人、融資融券與月營收；尚未完成驗證的全球資料不加入權重。")
 
@@ -4609,12 +4606,12 @@ def _v17_stats(rows):
 
 def _v172_background_validation():
     """
-    V17.2 hidden validation engine.
+    V26 hidden real-world validation engine (legacy 1D/5D ledger).
     Runs when the Streamlit app itself executes:
       1) settle eligible historical predictions
       2) automatically save the current model snapshot
       3) duplicate protection remains handled by _v17_db_insert()
-    No performance UI is rendered to the user.
+    No performance UI is rendered to the user. This legacy table currently settles 1D/5D only; 3/10/20/60D need the new horizon ledger before being reported as real-world hit rates.
     """
     if not _v17_db_ready():
         return
