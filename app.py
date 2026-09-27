@@ -24,8 +24,8 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V18.3.1"
-APP_RELEASE_TIME = "2026/09/27 14:01:29"
+APP_VERSION = "V18.3.2"
+APP_RELEASE_TIME = "2026/09/27 14:10:00"
 from urllib.parse import quote
 
 st.set_page_config(page_title="KEN AI 百億台股智慧決策系統", page_icon="📈", layout="wide")
@@ -741,7 +741,7 @@ def score_trend(d, n):
     return int(np.clip(s,0,100))
 
 def trend_label(s):
-    if s>=78:return "強勢偏多","🟢"
+    if s>=78:return "目前偏強","🟢"
     if s>=60:return "偏多","🟢"
     if s>=42:return "觀望","🟡"
     if s>=25:return "偏空","🔴"
@@ -1877,7 +1877,7 @@ elif _v173_at_limit_down:
     breakout=float(_v173_limit_down)
     confirmations=0
 elif rt and _v173_pct>=5.0 and pd.notna(rt.get("high",np.nan)) and close>=float(rt.get("high"))-_v173_tick:
-    status="🔴 盤中訊號：強勢偏多"
+    status="🔴 盤中訊號：目前偏強"
     status_reason=f"盤中漲幅 {_v173_pct:+.2f}% 且位於今日高檔，盤中動能優先提高訊號敏感度。"
 
 # V6 即時價格與 AI 當沖雷達
@@ -1962,7 +1962,7 @@ m1.metric("分析基準價",f"{close:.2f}",f"{chg:+.2f}%")
 def _v9_strength_label(v):
     try:
         v=float(v)
-        if v >= 75: return "強勢偏多"
+        if v >= 75: return "目前偏強"
         if v >= 60: return "偏多"
         if v >= 45: return "中性"
         if v >= 30: return "偏空"
@@ -2230,7 +2230,7 @@ if _v7_event["items"]:
 
 st.markdown(f"""
 <div class="panel">
-<div class="kicker">FINAL SUMMARY｜市場總結</div>
+<div class="kicker">市場重點</div>
 <div style="font-size:25px;font-weight:900">{overall_icon} AI 綜合判斷｜{overall_label}</div>
 <div class="action-sub">短線目前為「{status.replace("🚀 ","").replace("🟢 ","").replace("🟡 ","").replace("⚠️ ","").replace("🔴 ","")}」。
 重點不是預測哪一天一定上漲，而是等待價格、量能與技術條件觸發後再更新訊號。</div>
@@ -2334,7 +2334,7 @@ def _v176_horizon_signals(price_df, quote, p1=None, p5=None, inst_score=0):
     ls += 1 if r60>0.08 else (-1 if r60<-0.08 else 0)
 
     def label(score, strong=4):
-        if score>=strong: return "強勢偏多"
+        if score>=strong: return "目前偏強"
         if score>=1: return "偏多"
         if score<=-strong: return "強勢偏空"
         if score<=-1: return "偏空"
@@ -2363,7 +2363,7 @@ _v176=_v176_horizon_signals(
 )
 
 def _v176_color(sig):
-    if "強勢偏多" in sig: return "#ff4d4f"
+    if "目前偏強" in sig: return "#ff4d4f"
     if "偏多" in sig: return "#ff9f1a"
     if "強勢偏空" in sig: return "#21c77a"
     if "偏空" in sig: return "#62d99a"
@@ -2702,7 +2702,7 @@ def _v181_render(price_df,sid,token):
     st.caption("分別看未來約 1 週、1 個月、3 個月。只有當 AI 過去的預測表現達到基本標準，才會顯示機率；不夠可靠時會直接提醒你。")
 
     # 每次分析都以台灣當天日期抓取最新可取得資料
-    end=datetime.now(ZoneInfo("Asia/Taipei")).date()
+    end=pd.Timestamp.now(tz="Asia/Taipei").date()
     start=end-timedelta(days=2200)
 
     inst5=_v181_fetch("TaiwanStockInstitutionalInvestorsBuySell",sid,start,end,token)
@@ -4180,7 +4180,7 @@ def _v164_long_short_daytrade(price_df, quote, p1=None, p5=None, inst_score=0):
 
     # V17.4：方向與進場分離。方向描述市場強弱；進場狀態描述此刻是否適合執行。
     if bull >= 4 and bear <= 2:
-        market_direction="強勢偏多"
+        market_direction="目前偏強"
     elif bear >= 4 and bull <= 2:
         market_direction="強勢偏空"
     elif bull > bear:
@@ -4219,7 +4219,7 @@ def _v164_panel(price_df, quote, p1=None, p5=None, inst_score=0, master_long_sig
     market_direction=str(r.get("market_direction","—"))
     entry_state=str(r.get("entry_state","等待更明確進場條件"))
 
-    if "極強偏多" in market_direction or "強勢偏多" in market_direction:
+    if "極強偏多" in market_direction or "目前偏強" in market_direction:
         direction_color="#ff4d4f"
     elif "偏多" in market_direction:
         direction_color="#ff9f1a"
