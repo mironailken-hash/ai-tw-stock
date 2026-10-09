@@ -24,7 +24,7 @@ from pathlib import Path
 from datetime import date, timedelta
 from zoneinfo import ZoneInfo
 
-APP_VERSION = "V26.0"
+APP_VERSION = "V26.1"
 # 自動顯示部署程式檔案的更新時間（台灣時間）
 try:
     APP_RELEASE_TIME = pd.Timestamp(Path(__file__).stat().st_mtime, unit="s", tz="UTC").tz_convert("Asia/Taipei").strftime("%Y/%m/%d %H:%M:%S")
@@ -4640,3 +4640,64 @@ def _v172_background_validation():
 
 _v172_background_validation()
 
+
+# ===== V26.1 最近兩個月每日行情與外資買賣超（分析頁最下方） =====
+def _v261_daily_history(price_df, stock_id, fm_token):
+    st.markdown("### 最近兩個月每日股價與外資買賣超")
+    try:
+        h = price_df.copy()
+        if "date" in h.columns:
+            h["_day"] = pd.to_datetime(h["date"], errors="coerce").dt.normalize()
+        else:
+            h["_day"] = pd.to_datetime(h.index, errors="coerce").normalize()
+        h = h.dropna(subset=["_day"]).sort_values("_day").drop_duplicates("_day", keep="last")
+        end_day = pd.Timestamp.now(tz="Asia/Taipei").tz_localize(None).normalize()
+        begin_day = end_day - pd.DateOffset(months=2)
+        # Include one earlier close for the first day's accurate day-on-day change.
+        h["_close"] = pd.to_numeric(h["close"], errors="coerce")
+        h["_previous"] = h["_close"].shift(1)
+        h = h[(h["_day"] >= begin_day) & (h["_day"] <= end_day)].copy()
+        if h.empty:
+            st.info("最近兩個月沒有可顯示的交易紀錄。")
+            return
+        out = pd.DataFrame({"日期":h["_day"].dt.strftime("%Y/%m/%d")})
+        for title, choices in (
+            ("開盤價", ("open","Open")),
+            ("最高價", ("max","high","High")),
+            ("最低價", ("min","low","Low")),
+            ("收盤價", ("close","Close")),
+        ):
+            col = next((x for x in choices if x in h.columns), None)
+            out[title] = pd.to_numeric(h[col],errors="coerce").round(2).to_numpy() if col else np.nan
+        vol_col = next((x for x in ("Trading_Volume","volume","trading_volume") if x in h.columns), None)
+        out["成交量（張）"] = (pd.to_numeric(h[vol_col],errors="coerce")/1000).round(0).to_numpy() if vol_col else np.nan
+        change = (h["_close"] / h["_previous"] - 1)*100
+        out["漲跌幅（%）"] = change.round(2).to_numpy()
+        out["外資買賣超（張）"] = np.nan
+        try:
+            inst = _v181_fetch("TaiwanStockInstitutionalInvestorsBuySell",stock_id,begin_day.date(),end_day.date(),fm_token)
+            if inst is not None and not inst.empty and "date" in inst.columns and "name" in inst.columns:
+                z = inst.copy()
+                z["date"] = pd.to_datetime(z["date"],errors="coerce").dt.strftime("%Y/%m/%d")
+                # FinMind institutional rows are in shares; only foreign investor rows are counted.
+                foreign = z["name"].astype(str).str.contains("Foreign_Investor|Foreign_Dealer|外資",case=False,regex=True,na=False)
+                z = z.loc[foreign]
+                if "buy" in z.columns and "sell" in z.columns and not z.empty:
+                    z["_net"] = (pd.to_numeric(z["buy"],errors="coerce") - pd.to_numeric(z["sell"],errors="coerce"))/1000
+                    net = z.groupby("date")["_net"].sum()
+                    out["外資買賣超（張）"] = out["日期"].map(net).to_numpy()
+        except Exception:
+            pass
+        out = out.iloc[::-1].reset_index(drop=True)
+        fmt = {c:"{:,.2f}" for c in ("開盤價","最高價","最低價","收盤價","漲跌幅（%）")}
+        fmt.update({"成交量（張）":"{:,.0f}","外資買賣超（張）":"{:,.0f}"})
+        def color_change(v):
+            if pd.isna(v): return ""
+            return "color: #ef5350" if v>0 else ("color: #26a69a" if v<0 else "")
+        styled = out.style.format(fmt,na_rep="—").map(color_change,subset=["漲跌幅（%）","外資買賣超（張）"])
+        st.dataframe(styled,hide_index=True,use_container_width=True,height=min(900,70+len(out)*35))
+        st.caption("只列實際交易日；漲跌幅以當日收盤價相對前一交易日收盤價計算。成交量、外資買賣超以張計；資料缺漏顯示 —。")
+    except Exception as e:
+        st.warning(f"每日行情表暫時無法顯示：{type(e).__name__}")
+
+_v261_daily_history(price, sid, token)
